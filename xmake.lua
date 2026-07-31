@@ -1333,6 +1333,25 @@ target("tmc_ra_runtime_test")
     add_deps("native_ra")
 target_end()
 
+target("tmc_ra_android_queue_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_tsan") then
+        add_cflags("-fsanitize=thread", "-fno-omit-frame-pointer")
+        add_ldflags("-fsanitize=thread", {force = true})
+    elseif has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    if is_plat("android") then
+        set_targetdir("build/android/" .. (get_config("arch") or "arm64-v8a") .. "/tests")
+    else
+        set_targetdir("build/pc")
+    end
+    add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include")
+    add_files("port/ra/tmc_ra_android_queue.c", "port/ra/tmc_ra_android_queue_test.c")
+target_end()
+
 target("native_ra_outbox_test")
     set_kind("binary")
     set_languages("c11")
