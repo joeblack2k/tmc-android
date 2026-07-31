@@ -42,7 +42,7 @@
 | P0 baseline | ANDROID PACKAGED | Uncommitted | Host and both Android ABIs built; Debug and Release APKs packaged | No legal ROM or Thor observation; inherited-history scan needs a provenance decision before push |
 | P1 native RA core | HOST TESTED | `5d2fc97f` | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | CHECKPOINTED | `d8a6bb25` | Fail-closed memory and adapter tests pass under ASan/UBSan; enabled host and Android game targets link | Canonical-ROM memory parity and requested-address coverage are not available without a legal ROM |
-| P3 runtime wiring | CORE VERIFIED | No P3 diff | Existing owner-thread lifecycle core and deterministic mock test are byte-identical to the donor | Platform, login, UI publication, auto-identify, and Casual state remain deferred to their dedicated phases |
+| P3 runtime wiring | IN PROGRESS | | The independent owner-thread lifecycle core is verified, but the game-loop runtime and identification path are not yet integrated | Implement the injected P3 runtime without pulling Android transport, UI, or Casual state into this phase |
 | P4 Android secure login | NOT STARTED | | | |
 | P5 RA panel | NOT STARTED | | | |
 | P6 Spectator APK | NOT STARTED | | | |
@@ -91,7 +91,7 @@ Existing baseline warnings:
 | P2 Android tests | arm64-v8a and x86_64 P2 test targets with `enable_retroachievements=n` | PASS | Both ABI test binaries link |
 | P2 Android game | arm64-v8a and x86_64 `tmc_pc` with `enable_retroachievements=y` | PASS | Both `libmain.so` builds include the snapshot publication bridge only |
 | P2 checkpoint | Read-only memory-contract review | PASS AFTER CORRECTION | `gSave.fillerCC` and `gSave.figurines` are now invalid snapshot bytes, matching the unresolved manifest status |
-| P3 lifecycle core | Existing `native_ra_tests` under ASan/UBSan and TSan | PASS | P1 already proves the owner-thread lifecycle; donor comparison confirms no missing P3-only source |
+| P3 lifecycle core | Existing `native_ra_tests` under ASan/UBSan and TSan | PASS | This proves the independent core contract only; it is not evidence of game-loop runtime integration |
 
 ## Device Evidence
 
