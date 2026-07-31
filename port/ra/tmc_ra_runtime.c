@@ -16,9 +16,17 @@ static bool IsOwner(const TmcRaRuntime* runtime) {
     return runtime != NULL && runtime->owner_thread_set && pthread_equal(runtime->owner_thread, pthread_self());
 }
 
+uint64_t TmcRaRuntime_MonotonicMs(void) {
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+        return 0;
+    return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
+}
+
 static uint64_t Now(void* userdata) {
     (void)userdata;
-    return (uint64_t)clock() * 1000u / CLOCKS_PER_SEC;
+    return TmcRaRuntime_MonotonicMs();
 }
 
 static void ShutdownAtExit(void) {

@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct {
     TmcRaRuntime* runtime;
@@ -64,6 +65,8 @@ int main(void) {
     uint8_t rom[] = { 0x12, 0x34, 0x56, 0x78 };
     uint32_t generation_before_frame;
     uint32_t generation;
+    uint64_t monotonic_before;
+    const struct timespec delay = {.tv_nsec = 20000000L};
     const NRA_PlatformVTable platform = {
         .now_ms = Now,
         .http_begin = Begin,
@@ -71,6 +74,9 @@ int main(void) {
     };
 
     if (tmc_ra_memory_test_main() != 0)
+        return 1;
+    monotonic_before = TmcRaRuntime_MonotonicMs();
+    if (nanosleep(&delay, NULL) != 0 || TmcRaRuntime_MonotonicMs() < monotonic_before + 10)
         return 1;
     gRomData = rom;
     gRomSize = sizeof(rom);

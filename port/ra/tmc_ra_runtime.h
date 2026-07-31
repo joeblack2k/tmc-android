@@ -18,6 +18,7 @@ typedef struct TmcRaRuntime {
 
 extern TmcRaRuntime gTmcRaRuntime;
 
+uint64_t TmcRaRuntime_MonotonicMs(void);
 bool TmcRaRuntime_Init(TmcRaRuntime* runtime, const NRA_PlatformVTable* platform, void* platform_userdata);
 bool TmcRaRuntime_InitDefault(TmcRaRuntime* runtime);
 bool TmcRaRuntime_Frame(TmcRaRuntime* runtime);
