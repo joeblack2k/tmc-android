@@ -40,7 +40,7 @@
 | Milestone | Status | Commit | Evidence | Open Gate |
 |---|---|---|---|---|
 | P0 baseline | ANDROID PACKAGED | Uncommitted | Host and both Android ABIs built; Debug and Release APKs packaged | No legal ROM or Thor observation; inherited-history scan needs a provenance decision before push |
-| P1 native RA core | HOST TESTED | Uncommitted | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
+| P1 native RA core | HOST TESTED | `5d2fc97f` | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | NOT STARTED | | | |
 | P3 runtime wiring | NOT STARTED | | | |
 | P4 Android secure login | NOT STARTED | | | |
