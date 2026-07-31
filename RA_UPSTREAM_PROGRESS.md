@@ -24,7 +24,10 @@
   repository. A Git-history scan covered 2,992 inherited upstream commits and
   reported three redacted `generic-api-key` candidates in historical commits;
   they are absent from the current checkout. Do not push until those historical
-  candidates have a documented provenance decision.
+  candidates have a documented provenance decision. P1 adds one exact
+  `.gitleaksignore` fingerprint for the official pinned `rcheevos` AES source;
+  it is outside the P1 source list and is not a string, hex literal, or
+  initializer. No broad path or rule exclusion is used.
 - Ignored private paths: `/private/`, `/artifacts/`, ROMs, saves, states,
   tokens, keystores, RA snapshots, provenance/validity captures,
   `requested.bin`, and `overworld.jpg`.
@@ -37,7 +40,7 @@
 | Milestone | Status | Commit | Evidence | Open Gate |
 |---|---|---|---|---|
 | P0 baseline | ANDROID PACKAGED | Uncommitted | Host and both Android ABIs built; Debug and Release APKs packaged | No legal ROM or Thor observation; inherited-history scan needs a provenance decision before push |
-| P1 native RA core | NOT STARTED | | | |
+| P1 native RA core | HOST TESTED | Uncommitted | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | NOT STARTED | | | |
 | P3 runtime wiring | NOT STARTED | | | |
 | P4 Android secure login | NOT STARTED | | | |
@@ -76,6 +79,11 @@ Existing baseline warnings:
 | Release package | `./gradlew assembleRelease` | PASS | `app-release.apk`: `7e7cab9a93a9b1fd58f11ef6e67bec7d9d2ceafdc89cd45680c2a3304436670d` |
 | APK package/ABI | `aapt dump badging <apk>` | PASS | `dev.picori.tmc`, `arm64-v8a`, `x86_64` in Debug and Release |
 | APK signer | `apksigner verify --verbose --print-certs <apk>` | PASS | Debug signer, SHA-256 `43566c58c3385d0fad832bffa6a4286fb1b69d4735c819228296fce00a2befcf` |
+| P1 outbox classifier | `xmake build -y native_ra_outbox_test && xmake run native_ra_outbox_test` | PASS | Host-only classifier test |
+| P1 lifecycle/core | `xmake f -y --mode=debug --pc_sanitize=y --enable_retroachievements=n && xmake build -y native_ra_tests && xmake run native_ra_tests` | PASS | ASan/UBSan lifecycle and concurrency test |
+| P1 lifecycle/core | `xmake f -y --mode=debug --pc_sanitize=n --pc_tsan=y --enable_retroachievements=n && xmake build -y native_ra_tests && xmake run native_ra_tests` | PASS | ThreadSanitizer lifecycle and concurrency test |
+| P1 Android arm64 | `xmake f -y -p android -a arm64-v8a --enable_retroachievements=n && xmake build -y native_ra_tests` | PASS | Native RA test binary links |
+| P1 Android x86_64 | `xmake f -y -p android -a x86_64 --enable_retroachievements=n && xmake build -y native_ra_tests` | PASS | Native RA test binary links |
 
 ## Device Evidence
 
@@ -94,8 +102,10 @@ No RA memory snapshot or requested-address evidence exists on this branch.
 
 ## Current Change Set
 
-- Files changed: `.gitignore`, `RA_UPSTREAM_PROGRESS.md`.
-- Behavior changed: none.
+- Files changed: `.gitignore`, `RA_UPSTREAM_PROGRESS.md`, `.gitmodules`,
+  `libs/rcheevos`, `libs/native_ra/**`, and `xmake.lua`.
+- Behavior changed: independent native RA static-library and test targets are
+  available; `tmc_pc` is still not linked to RA code.
 - Behavior intentionally unchanged: all upstream launcher, display, map,
   dungeon, widescreen, runtime, and Android behavior.
 - Risks: no legal ROM is in this repository; no AYN Thor device evidence has
@@ -103,7 +113,8 @@ No RA memory snapshot or requested-address evidence exists on this branch.
   but upstream gates them as optional. The inherited-history scan also reports
   three redacted upstream candidates: `src/fileScreen.c:378` in `6fcfb53d`,
   `src/chooseFile.c:393` in `3399e6e`, and
-  `src/introSetTransition.c:319` in `df80390`.
+  `src/introSetTransition.c:319` in `df80390`. P1 is deliberately not linked
+  to the game yet, so it cannot identify ROMs, read memory, or submit data.
 - Rollback: reset this branch to
   `b03cbe5a690b52fe9ea27534fc43a14970a522af`.
 
@@ -118,6 +129,6 @@ No RA memory snapshot or requested-address evidence exists on this branch.
 
 ## Next Smallest Objective Gate
 
-Re-scan the edited target repository, review the staged P0 diff, commit the
-baseline ledger, then inventory the donor RA core and the current upstream
-build/runtime boundaries before porting the optional RA core.
+Complete the P1 checkpoint review, re-scan and commit the isolated RA core,
+then locate the current upstream canonical-state publication point for the
+fail-closed P2 memory adapter.

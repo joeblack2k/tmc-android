@@ -46,6 +46,12 @@ option("pc_sanitize")
     set_description("Build tmc_pc with -fsanitize=address,undefined for runtime UB/NULL-deref detection")
 option_end()
 
+option("pc_tsan")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build native RetroAchievements core tests with ThreadSanitizer")
+option_end()
+
 option("pc_lto_type_check")
     set_default(false)
     set_showmenu(true)
@@ -56,6 +62,12 @@ option("pc_profile")
     set_default(false)
     set_showmenu(true)
     set_description("Build tmc_pc with -pg gprof instrumentation for hotspot profiling")
+option_end()
+
+option("enable_retroachievements")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Reserve optional native RetroAchievements integration (core remains standalone until runtime wiring)")
 option_end()
 
 -- GPU shader pipeline (SDL_GPU). Stage 1: scaffold only — init the
@@ -1182,6 +1194,86 @@ target("memory_watch_test")
     add_defines("PC_PORT")
     add_files("port/port_debug_memory_watch.c")
     add_files("port/port_memory_watch_test.c")
+target_end()
+
+-- ====================
+-- Optional native RetroAchievements core. P1 keeps these targets independent
+-- of tmc_pc, SDL, JNI, and Minish Cap runtime code.
+-- ====================
+target("rcheevos")
+    set_kind("static")
+    set_languages("c11")
+    if is_plat("android") then
+        add_cflags("-fPIC")
+    end
+    -- Fixed v12.3.0 source list: client/API/runtime and GBA ROM-buffer
+    -- hashing only. Do not expand this to a wildcard.
+    add_defines("RC_CLIENT_SUPPORTS_HASH", "RC_HASH_NO_DISC", "RC_HASH_NO_ZIP", "RC_HASH_NO_ENCRYPTED")
+    add_includedirs("libs/rcheevos/include", "libs/rcheevos/src", "libs/rcheevos/src/rcheevos")
+    add_files("libs/rcheevos/src/rc_compat.c", "libs/rcheevos/src/rc_client.c",
+              "libs/rcheevos/src/rc_util.c", "libs/rcheevos/src/rc_version.c")
+    add_files("libs/rcheevos/src/rcheevos/alloc.c", "libs/rcheevos/src/rcheevos/condition.c",
+              "libs/rcheevos/src/rcheevos/condset.c", "libs/rcheevos/src/rcheevos/consoleinfo.c",
+              "libs/rcheevos/src/rcheevos/format.c", "libs/rcheevos/src/rcheevos/lboard.c",
+              "libs/rcheevos/src/rcheevos/memref.c", "libs/rcheevos/src/rcheevos/operand.c",
+              "libs/rcheevos/src/rcheevos/rc_validate.c", "libs/rcheevos/src/rcheevos/richpresence.c",
+              "libs/rcheevos/src/rcheevos/runtime.c", "libs/rcheevos/src/rcheevos/runtime_progress.c",
+              "libs/rcheevos/src/rcheevos/trigger.c", "libs/rcheevos/src/rcheevos/value.c")
+    add_files("libs/rcheevos/src/rhash/hash.c", "libs/rcheevos/src/rhash/hash_rom.c",
+              "libs/rcheevos/src/rhash/md5.c")
+    add_files("libs/rcheevos/src/rapi/rc_api_common.c", "libs/rcheevos/src/rapi/rc_api_editor.c",
+              "libs/rcheevos/src/rapi/rc_api_info.c", "libs/rcheevos/src/rapi/rc_api_runtime.c",
+              "libs/rcheevos/src/rapi/rc_api_user.c")
+target_end()
+
+target("native_ra")
+    set_kind("static")
+    set_languages("c11")
+    if is_plat("android") then
+        add_cflags("-fPIC")
+    end
+    if has_config("pc_tsan") then
+        add_cflags("-fsanitize=thread", "-fno-omit-frame-pointer")
+    elseif has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+    end
+    add_defines("RC_CLIENT_SUPPORTS_HASH")
+    add_includedirs("libs/native_ra/include", {public = true})
+    add_includedirs("libs/rcheevos/include")
+    add_files("libs/native_ra/src/native_ra.c", "libs/native_ra/src/native_ra_outbox.c")
+    add_deps("rcheevos")
+target_end()
+
+target("native_ra_tests")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_tsan") then
+        add_cflags("-fsanitize=thread", "-fno-omit-frame-pointer")
+        add_ldflags("-fsanitize=thread", {force = true})
+    elseif has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    if is_plat("android") then
+        set_targetdir("build/android/" .. (get_config("arch") or "arm64-v8a") .. "/tests")
+    else
+        set_targetdir("build/pc")
+    end
+    if is_plat("linux") then
+        add_syslinks("pthread")
+    end
+    add_includedirs("libs/native_ra/include", "libs/native_ra/src", "libs/rcheevos/include")
+    add_files("libs/native_ra/tests/native_ra_test.c")
+    add_deps("native_ra")
+target_end()
+
+target("native_ra_outbox_test")
+    set_kind("binary")
+    set_languages("c11")
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/src")
+    add_files("libs/native_ra/src/native_ra_outbox.c")
+    add_files("libs/native_ra/tests/native_ra_outbox_test.c")
 target_end()
 
 
