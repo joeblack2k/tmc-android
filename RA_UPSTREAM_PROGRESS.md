@@ -42,7 +42,7 @@
 | P0 baseline | ANDROID PACKAGED | Uncommitted | Host and both Android ABIs built; Debug and Release APKs packaged | No legal ROM or Thor observation; inherited-history scan needs a provenance decision before push |
 | P1 native RA core | HOST TESTED | `5d2fc97f` | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | CHECKPOINTED | `d8a6bb25` | Fail-closed memory and adapter tests pass under ASan/UBSan; enabled host and Android game targets link | Canonical-ROM memory parity and requested-address coverage are not available without a legal ROM |
-| P3 runtime wiring | FINAL REVIEW PENDING | `0173fbcb` | Game-owner initialization after ROM availability; canonical snapshot publication before each eligible `nra_do_frame`; foreign-thread lifecycle calls are ignored; normal process-exit cleanup is registered. A monotonic elapsed-time source drives retries and callbacks. Host ASan/UBSan/TSan and both Android ABI builds pass. | P4 must provide Android transport and credentials. No login, service game identification, or Spectator submission proof exists yet. |
+| P3 runtime wiring | CHECKPOINTED | `0173fbcb` | Game-owner initialization after ROM availability; canonical snapshot publication before each eligible `nra_do_frame`; foreign-thread lifecycle calls are ignored; normal process-exit cleanup is registered. A monotonic elapsed-time source drives retries and callbacks. Host ASan/UBSan/TSan and both Android ABI builds pass. | P4 must provide Android transport and credentials. No login, service game identification, or Spectator submission proof exists yet. |
 | P4 Android secure login | NOT STARTED | | | |
 | P5 RA panel | NOT STARTED | | | |
 | P6 Spectator APK | NOT STARTED | | | |
@@ -98,6 +98,7 @@ Existing baseline warnings:
 | P3 Android x86_64 | `xmake f -y -p android -a x86_64 --ndk=/opt/homebrew/share/android-commandlinetools/ndk/26.3.11579264 --game_version=USA --enable_retroachievements=y --pc_sanitize=n --pc_tsan=n`, then `tmc_ra_runtime_test` and `tmc_pc` | PASS | Android API 21 test binary and `libmain.so` link |
 | P3 runtime lifecycle | `tmc_ra_runtime_test` | PASS | Snapshot publication precedes game identification; foreign-thread frame/idle/reset/shutdown are no-ops; explicit reset/shutdown and default global `atexit` cleanup are exercised under host sanitizers |
 | P3 monotonic time | `tmc_ra_runtime_test` | PASS | A 20 ms sleep advances the `CLOCK_MONOTONIC` runtime clock by at least 10 ms |
+| P3 checkpoint | Read-only runtime/lifecycle review | PASS | Snapshot ordering, owner-thread guards, monotonic time, transportless default platform, and ledger claims reviewed after corrections |
 
 ## Device Evidence
 
