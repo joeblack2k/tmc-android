@@ -43,7 +43,7 @@
 | P1 native RA core | HOST TESTED | `5d2fc97f` | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | CHECKPOINTED | `d8a6bb25` | Fail-closed memory and adapter tests pass under ASan/UBSan; enabled host and Android game targets link | Canonical-ROM memory parity and requested-address coverage are not available without a legal ROM |
 | P3 runtime wiring | CHECKPOINTED | `0173fbcb` | Game-owner initialization after ROM availability; canonical snapshot publication before each eligible `nra_do_frame`; foreign-thread lifecycle calls are ignored; normal process-exit cleanup is registered. A monotonic elapsed-time source drives retries and callbacks. Host ASan/UBSan/TSan and both Android ABI builds pass. | P4 must provide Android transport and credentials. No login, service game identification, or Spectator submission proof exists yet. |
-| P4 Android secure login | NOT STARTED | | | |
+| P4 Android secure login | FOUNDATION TESTED | `ae6842ad` | Bounded generation-tagged completion/login queue with copied ownership, response and credential limits, credential wiping, and close/clear behavior passes host sanitizers and both Android ABI links. | JNI platform, HTTPS policy, Keystore persistence, password dialog, and device proof remain unimplemented. |
 | P5 RA panel | NOT STARTED | | | |
 | P6 Spectator APK | NOT STARTED | | | |
 | P7 Casual state/policy | NOT STARTED | | | |
@@ -99,6 +99,8 @@ Existing baseline warnings:
 | P3 runtime lifecycle | `tmc_ra_runtime_test` | PASS | Snapshot publication precedes game identification; foreign-thread frame/idle/reset/shutdown are no-ops; explicit reset/shutdown and default global `atexit` cleanup are exercised under host sanitizers |
 | P3 monotonic time | `tmc_ra_runtime_test` | PASS | A 20 ms sleep advances the `CLOCK_MONOTONIC` runtime clock by at least 10 ms |
 | P3 checkpoint | Read-only runtime/lifecycle review | PASS | Snapshot ordering, owner-thread guards, monotonic time, transportless default platform, and ledger claims reviewed after corrections |
+| P4 queue | `tmc_ra_android_queue_test` under ASan/UBSan and TSan | PASS | Capacity, copied HTTP body, stale-generation rejection, one password slot, and shutdown admission tests pass |
+| P4 Android queue | arm64-v8a and x86_64 `tmc_ra_android_queue_test` | PASS | Both Android API 21 test binaries link |
 
 ## Device Evidence
 
