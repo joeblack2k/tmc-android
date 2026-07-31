@@ -175,3 +175,16 @@ android/app/build/
 *.jks
 *.keystore
 keystore.properties
+
+# RetroAchievements integration: local-only inputs and evidence. These can
+# contain ROM-derived, account, save, or device data and must never enter Git.
+/private/
+/artifacts/
+*.state
+*.ss0
+*.token
+ra-*.snapshot.bin
+ra-*.provenance.bin
+ra-*.validity.bin
+requested.bin
+overworld.jpg
