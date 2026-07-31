@@ -25,8 +25,6 @@ static NRA_Result tmc_ra_build_memory_snapshot(void* userdata, NRA_MemoryView* m
     if (memory == NULL)
         return NRA_INVALID_ARGUMENT;
 
-    TmcRaMemory_ResetAudit();
-    TmcRaMemory_Publish();
     snapshot = TmcRaMemory_Current();
     memory->data = snapshot.bytes;
     memory->size = TMC_RA_SNAPSHOT_BYTES;

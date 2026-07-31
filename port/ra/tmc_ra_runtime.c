@@ -1,6 +1,7 @@
 #include "tmc_ra_runtime.h"
 
 #include "port_version.h"
+#include "tmc_ra_memory.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -62,6 +63,8 @@ bool TmcRaRuntime_Frame(TmcRaRuntime* runtime) {
 
     if (!IsOwner(runtime) || runtime->context == NULL || runtime->shutdown_started)
         return false;
+    TmcRaMemory_ResetAudit();
+    TmcRaMemory_Publish();
     nra_do_frame(runtime->context);
     if (!runtime->identify_requested && nra_copy_status_snapshot(runtime->context, &status) && status.logged_in) {
         runtime->identify_requested = true;

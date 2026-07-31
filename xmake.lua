@@ -872,8 +872,8 @@ target("tmc_pc")
     add_files("port/port_upscale.c") -- xBRZ-style pixel-art upscaler
     add_files("port/port_save.c")        -- EEPROM save emulation
     if has_config("enable_retroachievements") then
-        -- P2 only publishes a fail-closed canonical memory snapshot. The
-        -- native RA runtime, network client, and UI remain unlinked.
+        -- P3 links the owner-thread runtime and fail-closed snapshot bridge.
+        -- Android transport and UI remain unlinked.
         add_defines("TMC_ENABLE_RETROACHIEVEMENTS=1")
         add_includedirs("port/ra", "libs/native_ra/include", "libs/rcheevos/include")
         add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c")
