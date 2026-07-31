@@ -7,7 +7,7 @@
 - Upstream base SHA: `b03cbe5a690b52fe9ea27534fc43a14970a522af`
 - Fork repository: not created or pushed
 - Integration branch: `feature/native-retroachievements-port`
-- Current HEAD: `b03cbe5a690b52fe9ea27534fc43a14970a522af`
+- Current P3 code commit: `b2d4ba8f`
 - Donor snapshot: `zeldaTMC.zip`, SHA-256
   `c5e6e82554ecdf303290d75d981be3e6d449a44c7d79b544edee599576ee0295`,
   embedded donor revision `11b313dcfc51609e6a4fa9508cbb914eea2b5243`
@@ -42,7 +42,7 @@
 | P0 baseline | ANDROID PACKAGED | Uncommitted | Host and both Android ABIs built; Debug and Release APKs packaged | No legal ROM or Thor observation; inherited-history scan needs a provenance decision before push |
 | P1 native RA core | HOST TESTED | `5d2fc97f` | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | CHECKPOINTED | `d8a6bb25` | Fail-closed memory and adapter tests pass under ASan/UBSan; enabled host and Android game targets link | Canonical-ROM memory parity and requested-address coverage are not available without a legal ROM |
-| P3 runtime wiring | IN PROGRESS | | The independent owner-thread lifecycle core is verified, but the game-loop runtime and identification path are not yet integrated | Implement the injected P3 runtime without pulling Android transport, UI, or Casual state into this phase |
+| P3 runtime wiring | REVIEW PENDING | `b2d4ba8f` | Game-owner initialization after ROM availability; one `nra_do_frame` path after canonical game state; reset, idle, and exit cleanup are owner-thread guarded. Host ASan/UBSan/TSan and both Android ABI builds pass. | P4 must provide Android transport and credentials. No login, service game identification, or Spectator submission proof exists yet. |
 | P4 Android secure login | NOT STARTED | | | |
 | P5 RA panel | NOT STARTED | | | |
 | P6 Spectator APK | NOT STARTED | | | |
@@ -92,6 +92,11 @@ Existing baseline warnings:
 | P2 Android game | arm64-v8a and x86_64 `tmc_pc` with `enable_retroachievements=y` | PASS | Both `libmain.so` builds include the snapshot publication bridge only |
 | P2 checkpoint | Read-only memory-contract review | PASS AFTER CORRECTION | `gSave.fillerCC` and `gSave.figurines` are now invalid snapshot bytes, matching the unresolved manifest status |
 | P3 lifecycle core | Existing `native_ra_tests` under ASan/UBSan and TSan | PASS | This proves the independent core contract only; it is not evidence of game-loop runtime integration |
+| P3 host runtime | `xmake f -y --mode=debug --pc_sanitize=y --pc_tsan=n --enable_retroachievements=y --game_version=USA`, then `tmc_ra_runtime_test` and `tmc_pc` | PASS | ASan/UBSan runtime test passes; enabled host game links the owner-thread runtime |
+| P3 host runtime | `xmake f -y --mode=debug --pc_sanitize=n --pc_tsan=y --enable_retroachievements=y --game_version=USA`, then `tmc_ra_runtime_test` | PASS | TSan runtime test passes, including a foreign-thread frame no-op |
+| P3 Android arm64 | `xmake f -y -p android -a arm64-v8a --ndk=/opt/homebrew/share/android-commandlinetools/ndk/26.3.11579264 --game_version=USA --enable_retroachievements=y --pc_sanitize=n --pc_tsan=n`, then `tmc_ra_runtime_test` and `tmc_pc` | PASS | Android API 21 test binary and `libmain.so` link |
+| P3 Android x86_64 | `xmake f -y -p android -a x86_64 --ndk=/opt/homebrew/share/android-commandlinetools/ndk/26.3.11579264 --game_version=USA --enable_retroachievements=y --pc_sanitize=n --pc_tsan=n`, then `tmc_ra_runtime_test` and `tmc_pc` | PASS | Android API 21 test binary and `libmain.so` link |
+| P3 default lifecycle | `tmc_ra_runtime_test` | PASS | ROM availability, default transportless initialization, one snapshot per loaded frame, reset notification, and owner-thread shutdown are asserted |
 
 ## Device Evidence
 
@@ -99,10 +104,10 @@ Existing baseline warnings:
 - Install method: not attempted.
 - Top display result: not observed.
 - Bottom display result: not observed.
-- RA login result: not applicable; RA is not integrated.
+- RA login result: not observed; P3 deliberately has no Android transport or credentials.
 - Token restore result: not applicable.
 - Lifecycle matrix result: not observed.
-- Submission mode: no RA client is present.
+- Submission mode: no submission-capable client is present; P4-P6 are still required.
 
 ## Memory-Parity Evidence
 
@@ -125,8 +130,11 @@ Existing baseline warnings:
   `libs/rcheevos`, `libs/native_ra/**`, `port/ra/**`, `port/port_save.{c,h}`,
   `src/main.c`, `tools/ra/**`, and `xmake.lua`.
 - Behavior changed: an optional P2 build publishes a fail-closed canonical
-  snapshot after `AudioMain`; independent native RA and P2 bridge tests are
-  available. `tmc_pc` is still not linked to an RA runtime or network client.
+  snapshot after `AudioMain`. With RA enabled, P3 initializes a transportless
+  native runtime on the game-owner thread after ROM availability, performs the
+  frame call only after that snapshot, and forwards reset/idle/normal-exit
+  lifecycle events on that owner thread. `tmc_pc` has no Android transport,
+  account storage, login UI, or submission-capable platform yet.
 - Behavior intentionally unchanged: all upstream launcher, display, map,
   dungeon, widescreen, RA login, RA UI, RA runtime, submission, and Android
   account behavior.
@@ -135,8 +143,10 @@ Existing baseline warnings:
   but upstream gates them as optional. The inherited-history scan also reports
   three redacted upstream candidates: `src/fileScreen.c:378` in `6fcfb53d`,
   `src/chooseFile.c:393` in `3399e6e`, and
-  `src/introSetTransition.c:319` in `df80390`. P1 is deliberately not linked
-  to the game yet, so it cannot identify ROMs, read memory, or submit data.
+  `src/introSetTransition.c:319` in `df80390`. P3 is linked to the game only
+  behind the build flag, but its default platform cannot authenticate or send
+  HTTP. It therefore cannot identify a service game, restore an account, or
+  submit data before P4.
 - Rollback: reset this branch to
   `b03cbe5a690b52fe9ea27534fc43a14970a522af`.
 
