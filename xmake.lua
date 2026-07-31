@@ -871,6 +871,13 @@ target("tmc_pc")
     add_files("port/port_hdma.c")    -- HBlank-DMA simulation (iris/circle WIN0H)
     add_files("port/port_upscale.c") -- xBRZ-style pixel-art upscaler
     add_files("port/port_save.c")        -- EEPROM save emulation
+    if has_config("enable_retroachievements") then
+        -- P2 only publishes a fail-closed canonical memory snapshot. The
+        -- native RA runtime, network client, and UI remain unlinked.
+        add_defines("TMC_ENABLE_RETROACHIEVEMENTS=1")
+        add_includedirs("port/ra", "libs/native_ra/include", "libs/rcheevos/include")
+        add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c")
+    end
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
     add_files("port/port_second_screen_state.c") -- Thread-safe gSave/gRoomControls snapshot for the second screen
@@ -1265,6 +1272,42 @@ target("native_ra_tests")
     add_includedirs("libs/native_ra/include", "libs/native_ra/src", "libs/rcheevos/include")
     add_files("libs/native_ra/tests/native_ra_test.c")
     add_deps("native_ra")
+target_end()
+
+-- P2 bridge tests link only hermetic fixture globals; they never need SDL,
+-- ROM files, or a running game loop.
+target("tmc_ra_memory_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    if is_plat("android") then
+        set_targetdir("build/android/" .. (get_config("arch") or "arm64-v8a") .. "/tests")
+    else
+        set_targetdir("build/pc")
+    end
+    add_includedirs(".", "include", "port", "port/ra")
+    add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
+    add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_memory_test.c")
+target_end()
+
+target("tmc_ra_adapter_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    if is_plat("android") then
+        set_targetdir("build/android/" .. (get_config("arch") or "arm64-v8a") .. "/tests")
+    else
+        set_targetdir("build/pc")
+    end
+    add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
+    add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
+    add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_adapter_test.c")
 target_end()
 
 target("native_ra_outbox_test")

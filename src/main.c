@@ -16,6 +16,9 @@
 #ifdef PC_PORT
 #include "port_hdma.h"
 #include "port_second_screen_state.h"
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+#include "ra/tmc_ra_memory.h"
+#endif
 #include <setjmp.h>
 #endif
 #include "gba/io_reg.h"
@@ -129,6 +132,9 @@ void AgbMain(void) {
                 FadeMain();
 
                 AudioMain();
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+                TmcRaMemory_Publish();
+#endif
                 break;
         }
 #ifdef PC_PORT
