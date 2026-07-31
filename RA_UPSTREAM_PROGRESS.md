@@ -7,7 +7,7 @@
 - Upstream base SHA: `b03cbe5a690b52fe9ea27534fc43a14970a522af`
 - Fork repository: not created or pushed
 - Integration branch: `feature/native-retroachievements-port`
-- Current P3 code commit: `b2d4ba8f`
+- Current P3 code commit: `14bfe15d`
 - Donor snapshot: `zeldaTMC.zip`, SHA-256
   `c5e6e82554ecdf303290d75d981be3e6d449a44c7d79b544edee599576ee0295`,
   embedded donor revision `11b313dcfc51609e6a4fa9508cbb914eea2b5243`
@@ -42,7 +42,7 @@
 | P0 baseline | ANDROID PACKAGED | Uncommitted | Host and both Android ABIs built; Debug and Release APKs packaged | No legal ROM or Thor observation; inherited-history scan needs a provenance decision before push |
 | P1 native RA core | HOST TESTED | `5d2fc97f` | ASan/UBSan/TSan host tests pass; arm64-v8a and x86_64 test binaries link | P2 adapter, memory, and game-loop wiring are not started |
 | P2 memory adapter | CHECKPOINTED | `d8a6bb25` | Fail-closed memory and adapter tests pass under ASan/UBSan; enabled host and Android game targets link | Canonical-ROM memory parity and requested-address coverage are not available without a legal ROM |
-| P3 runtime wiring | REVIEW PENDING | `b2d4ba8f` | Game-owner initialization after ROM availability; one `nra_do_frame` path after canonical game state; reset, idle, and exit cleanup are owner-thread guarded. Host ASan/UBSan/TSan and both Android ABI builds pass. | P4 must provide Android transport and credentials. No login, service game identification, or Spectator submission proof exists yet. |
+| P3 runtime wiring | CORRECTION REVIEW PENDING | `14bfe15d` | Game-owner initialization after ROM availability; canonical snapshot publication before each eligible `nra_do_frame`; foreign-thread lifecycle calls are ignored; normal process-exit cleanup is registered. Host ASan/UBSan/TSan and both Android ABI builds pass. | P4 must provide Android transport and credentials. No login, service game identification, or Spectator submission proof exists yet. |
 | P4 Android secure login | NOT STARTED | | | |
 | P5 RA panel | NOT STARTED | | | |
 | P6 Spectator APK | NOT STARTED | | | |
@@ -96,7 +96,7 @@ Existing baseline warnings:
 | P3 host runtime | `xmake f -y --mode=debug --pc_sanitize=n --pc_tsan=y --enable_retroachievements=y --game_version=USA`, then `tmc_ra_runtime_test` | PASS | TSan runtime test passes, including a foreign-thread frame no-op |
 | P3 Android arm64 | `xmake f -y -p android -a arm64-v8a --ndk=/opt/homebrew/share/android-commandlinetools/ndk/26.3.11579264 --game_version=USA --enable_retroachievements=y --pc_sanitize=n --pc_tsan=n`, then `tmc_ra_runtime_test` and `tmc_pc` | PASS | Android API 21 test binary and `libmain.so` link |
 | P3 Android x86_64 | `xmake f -y -p android -a x86_64 --ndk=/opt/homebrew/share/android-commandlinetools/ndk/26.3.11579264 --game_version=USA --enable_retroachievements=y --pc_sanitize=n --pc_tsan=n`, then `tmc_ra_runtime_test` and `tmc_pc` | PASS | Android API 21 test binary and `libmain.so` link |
-| P3 default lifecycle | `tmc_ra_runtime_test` | PASS | ROM availability, default transportless initialization, one snapshot per loaded frame, reset notification, and owner-thread shutdown are asserted |
+| P3 runtime lifecycle | `tmc_ra_runtime_test` | PASS | Snapshot publication precedes game identification; foreign-thread frame/idle/reset/shutdown are no-ops; explicit reset/shutdown and default global `atexit` cleanup are exercised under host sanitizers |
 
 ## Device Evidence
 
@@ -131,13 +131,13 @@ Existing baseline warnings:
   `src/main.c`, `tools/ra/**`, and `xmake.lua`.
 - Behavior changed: an optional P2 build publishes a fail-closed canonical
   snapshot after `AudioMain`. With RA enabled, P3 initializes a transportless
-  native runtime on the game-owner thread after ROM availability, performs the
-  frame call only after that snapshot, and forwards reset/idle/normal-exit
-  lifecycle events on that owner thread. `tmc_pc` has no Android transport,
+  native runtime on the game-owner thread after ROM availability, publishes
+  before each native RA frame call, and forwards reset/idle lifecycle events
+  on that owner thread. It registers normal process-exit cleanup. `tmc_pc` has
+  no Android transport,
   account storage, login UI, or submission-capable platform yet.
 - Behavior intentionally unchanged: all upstream launcher, display, map,
-  dungeon, widescreen, RA login, RA UI, RA runtime, submission, and Android
-  account behavior.
+  dungeon, widescreen, RA login UI, submission, and Android account behavior.
 - Risks: no legal ROM is in this repository; no AYN Thor device evidence has
   been collected; the two private optional launcher submodules are unavailable
   but upstream gates them as optional. The inherited-history scan also reports
