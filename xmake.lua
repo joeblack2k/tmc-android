@@ -876,7 +876,8 @@ target("tmc_pc")
         -- native RA runtime, network client, and UI remain unlinked.
         add_defines("TMC_ENABLE_RETROACHIEVEMENTS=1")
         add_includedirs("port/ra", "libs/native_ra/include", "libs/rcheevos/include")
-        add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c")
+        add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c")
+        add_deps("native_ra")
     end
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
@@ -1308,6 +1309,28 @@ target("tmc_ra_adapter_test")
     add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
     add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
     add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_adapter_test.c")
+target_end()
+
+target("tmc_ra_runtime_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_tsan") then
+        add_cflags("-fsanitize=thread", "-fno-omit-frame-pointer")
+        add_ldflags("-fsanitize=thread", {force = true})
+    elseif has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    if is_plat("android") then
+        set_targetdir("build/android/" .. (get_config("arch") or "arm64-v8a") .. "/tests")
+    else
+        set_targetdir("build/pc")
+    end
+    add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
+    add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
+    add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c",
+              "port/ra/tmc_ra_runtime_test.c")
+    add_deps("native_ra")
 target_end()
 
 target("native_ra_outbox_test")

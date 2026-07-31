@@ -15,9 +15,10 @@
 #include "fade.h"
 #ifdef PC_PORT
 #include "port_hdma.h"
+#include "port_rom.h"
 #include "port_second_screen_state.h"
 #ifdef TMC_ENABLE_RETROACHIEVEMENTS
-#include "ra/tmc_ra_memory.h"
+#include "ra/tmc_ra_runtime.h"
 #endif
 #include <setjmp.h>
 #endif
@@ -57,9 +58,17 @@ void AgbMain(void) {
     {
         extern jmp_buf gPortSoftResetJmp;
         extern int gPortSoftResetArmed;
-        setjmp(gPortSoftResetJmp);
+        if (setjmp(gPortSoftResetJmp) != 0) {
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+            TmcRaRuntime_ResetCompleted(&gTmcRaRuntime);
+#endif
+        }
         gPortSoftResetArmed = 1;
     }
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+    if (!TmcRaRuntime_IsInitialized(&gTmcRaRuntime) && gRomData != NULL && gRomSize != 0)
+        (void)TmcRaRuntime_InitDefault(&gTmcRaRuntime);
+#endif
 #endif
     // Initialization
     N64_POST(10);
@@ -102,6 +111,9 @@ void AgbMain(void) {
             default:
                 if (gMain.pauseFrames != 0) {
                     do {
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+                        TmcRaRuntime_Idle(&gTmcRaRuntime);
+#endif
                         VBlankIntrWait();
                     } while (--gMain.pauseFrames);
                 }
@@ -111,6 +123,9 @@ void AgbMain(void) {
                     gMain.pauseCount--;
                     cnt = gMain.pauseInterval;
                     while (cnt-- > 0) {
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+                        TmcRaRuntime_Idle(&gTmcRaRuntime);
+#endif
                         VBlankIntrWait();
                     }
                 }
@@ -133,7 +148,8 @@ void AgbMain(void) {
 
                 AudioMain();
 #ifdef TMC_ENABLE_RETROACHIEVEMENTS
-                TmcRaMemory_Publish();
+                if (TmcRaRuntime_Frame(&gTmcRaRuntime))
+                    DoSoftReset();
 #endif
                 break;
         }
