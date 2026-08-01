@@ -38,4 +38,9 @@ bool TmcRaRuntime_CanRestoreSaveState(const TmcRaRuntime* runtime);
 bool TmcRaRuntime_CanFastForward(const TmcRaRuntime* runtime);
 bool TmcRaRuntime_CanUsePracticeControls(const TmcRaRuntime* runtime);
 
+#ifdef TMC_RA_RUNTIME_TEST
+/* Test-only admission fixture; production readiness remains adapter-owned. */
+void TmcRaRuntime_TestSetCasualReady(bool ready);
+#endif
+
 #endif

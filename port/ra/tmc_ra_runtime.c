@@ -17,6 +17,9 @@
 
 TmcRaRuntime gTmcRaRuntime;
 static bool sAtexitRegistered;
+#ifdef TMC_RA_RUNTIME_TEST
+static bool sTestCasualReady;
+#endif
 
 static bool IsOwner(const TmcRaRuntime* runtime) {
     return runtime != NULL && runtime->owner_thread_set && pthread_equal(runtime->owner_thread, pthread_self());
@@ -118,6 +121,12 @@ static void DrainUiCommands(TmcRaRuntime* runtime) {
     }
 }
 
+#ifdef TMC_RA_RUNTIME_TEST
+void TmcRaRuntime_TestSetCasualReady(bool ready) {
+    sTestCasualReady = ready;
+}
+#endif
+
 bool TmcRaRuntime_Init(TmcRaRuntime* runtime, const NRA_PlatformVTable* platform, void* platform_userdata) {
     const NRA_CreateParams params = {
         .abi_version = NRA_ABI_VERSION,
@@ -135,8 +144,16 @@ bool TmcRaRuntime_Init(TmcRaRuntime* runtime, const NRA_PlatformVTable* platform
     memset(runtime, 0, sizeof(*runtime));
     TmcRaUiBridge_Reset();
     TmcRaAdapter_Init(&runtime->adapter);
+#ifdef TMC_RA_RUNTIME_TEST
+    runtime->adapter.memory_fully_validated = sTestCasualReady;
+#endif
     if (nra_create(&params, &runtime->context) != NRA_OK)
         return false;
+    if (nra_request_mode(runtime->context, NRA_MODE_LIVE_CASUAL) != NRA_OK) {
+        nra_destroy(runtime->context);
+        runtime->context = NULL;
+        return false;
+    }
     runtime->owner_thread = pthread_self();
     runtime->owner_thread_set = true;
     return true;

@@ -47,10 +47,10 @@ int main(void) {
     CHECK_ADAPTER(TmcRaMemory_Current().generation == memory.generation);
     CHECK_ADAPTER(vtable->admit_mode != NULL);
     CHECK_ADAPTER(!vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, false));
-    CHECK_ADAPTER(vtable->admit_mode(&adapter, NRA_MODE_SPECTATOR, false));
+    CHECK_ADAPTER(!vtable->admit_mode(&adapter, NRA_MODE_SPECTATOR, false));
     adapter.memory_fully_validated = true;
+    CHECK_ADAPTER(vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, false));
     CHECK_ADAPTER(vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, true));
-    CHECK_ADAPTER(!vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, false));
 
     TmcRaMemory_OverlayExplicit(0x0010, (const uint8_t[]){ 0x9a, 0xbc }, 2);
     TmcRaMemory_ResetAudit();

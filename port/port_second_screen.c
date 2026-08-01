@@ -1787,18 +1787,8 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 
 #ifdef TMC_ENABLE_RETROACHIEVEMENTS
 
-static const char* RaModeWord(NRA_Mode mode) {
-    switch (mode) {
-        case NRA_MODE_LIVE_CASUAL:
-            return "CASUAL";
-        case NRA_MODE_STRICT_UNAPPROVED:
-            return "STRICT";
-        case NRA_MODE_HARDCORE_APPROVED:
-            return "HARDCORE";
-        case NRA_MODE_SPECTATOR:
-        default:
-            return "SPECTATOR";
-    }
+static const char* RaModeWord(void) {
+    return "CASUAL";
 }
 
 static const char* RaConnectionWord(NRA_UIConnection connection) {
@@ -1857,7 +1847,7 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     float actionGap;
     float actionChipHeight;
     float loginWidth;
-    float spectatorWidth;
+    float casualWidth;
     const char* loginLabel;
     int32_t actionTextSize;
     int stackActions;
@@ -1884,8 +1874,8 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     actionChipHeight = MENU_TEXT_BOX * actionTextSize + 22 * u;
     loginLabel = ui->logged_in ? "LOGOUT" : "LOGIN";
     loginWidth = MenuTextWidth(loginLabel, actionTextSize) + 52 * u;
-    spectatorWidth = MenuTextWidth("SPECTATOR", actionTextSize) + 52 * u;
-    stackActions = loginWidth + actionGap + spectatorWidth > ix1 - ix0;
+    casualWidth = MenuTextWidth("CASUAL", actionTextSize) + 52 * u;
+    stackActions = loginWidth + actionGap + casualWidth > ix1 - ix0;
     DrawPanelHeaderChip(s, (rx0 + rx1) / 2.0f, iy0, "RA STATUS", hms, u);
     infoY = iy0 + MENU_TEXT_BOX * hms + 30 * u;
 
@@ -1895,7 +1885,7 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     RaCopyText(game, sizeof(game), ui->game_loaded ? ui->game_title : NULL,
                ui->logged_in ? "WAITING FOR GAME" : "LOGIN REQUIRED");
     RaCopyText(presence, sizeof(presence), ui->rich_presence, "No rich presence");
-    snprintf(mode, sizeof(mode), "%s", RaModeWord(ui->mode));
+    snprintf(mode, sizeof(mode), "%s", RaModeWord());
     snprintf(connection, sizeof(connection), "%s", RaConnectionWord(ui->connection));
     snprintf(summary, sizeof(summary), "%u/%u ACHIEVEMENTS  %u/%u POINTS", ui->achievements_unlocked,
              ui->achievements_total, ui->achievement_points_unlocked, ui->achievement_points_total);
@@ -1963,24 +1953,24 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     center = (rx0 + rx1) / 2.0f;
     if (stackActions) {
         float actionBottom = ry1 - 12 * u;
-        DrawMapChip(s, "SPECTATOR", center, actionBottom, u, chip);
-        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_RA_COMMAND,
-                  TMC_RA_UI_COMMAND_REQUEST_MODE);
+        DrawMapChip(s, "CASUAL", center, actionBottom, u, chip);
         DrawMapChip(s, loginLabel, center, actionBottom - actionChipHeight - actionGap, u, chip);
-        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_RA_COMMAND,
-                  ui->logged_in ? TMC_RA_UI_COMMAND_LOGOUT
-                                : TMC_RA_UI_COMMAND_REQUEST_PASSWORD_LOGIN);
+        if (ui->available) {
+            AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_RA_COMMAND,
+                      ui->logged_in ? TMC_RA_UI_COMMAND_LOGOUT
+                                    : TMC_RA_UI_COMMAND_REQUEST_PASSWORD_LOGIN);
+        }
     } else {
-        float totalWidth = loginWidth + actionGap + spectatorWidth;
+        float totalWidth = loginWidth + actionGap + casualWidth;
         float left = center - totalWidth / 2.0f;
         DrawMapChip(s, loginLabel, left + loginWidth / 2.0f, ry1 - 12 * u, u, chip);
-        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_RA_COMMAND,
-                  ui->logged_in ? TMC_RA_UI_COMMAND_LOGOUT
-                                : TMC_RA_UI_COMMAND_REQUEST_PASSWORD_LOGIN);
-        DrawMapChip(s, "SPECTATOR", left + loginWidth + actionGap + spectatorWidth / 2.0f,
+        if (ui->available) {
+            AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_RA_COMMAND,
+                      ui->logged_in ? TMC_RA_UI_COMMAND_LOGOUT
+                                    : TMC_RA_UI_COMMAND_REQUEST_PASSWORD_LOGIN);
+        }
+        DrawMapChip(s, "CASUAL", left + loginWidth + actionGap + casualWidth / 2.0f,
                     ry1 - 12 * u, u, chip);
-        AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_RA_COMMAND,
-                  TMC_RA_UI_COMMAND_REQUEST_MODE);
     }
 }
 
@@ -2737,11 +2727,14 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
 #ifdef TMC_ENABLE_RETROACHIEVEMENTS
         case SS_ACT_RA_COMMAND: {
+            NRA_UISnapshot snapshot;
             TmcRaUiCommand command;
+            if (!TmcRaUiBridge_Copy(&snapshot))
+                break;
             memset(&command, 0, sizeof(command));
             command.kind = (TmcRaUiCommandKind)hit.arg;
             if (command.kind == TMC_RA_UI_COMMAND_REQUEST_MODE)
-                command.mode = NRA_MODE_SPECTATOR;
+                command.mode = NRA_MODE_LIVE_CASUAL;
             (void)TmcRaUiBridge_EnqueueCommand(&command);
             break;
         }

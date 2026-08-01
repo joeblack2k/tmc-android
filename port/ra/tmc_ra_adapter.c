@@ -31,7 +31,11 @@ static NRA_Result tmc_ra_build_memory_snapshot(void* userdata, NRA_MemoryView* m
     memory->size = TMC_RA_SNAPSHOT_BYTES;
     memory->generation = snapshot.generation;
     /* Live remains gated until every address in this canonical view is proven. */
+#ifdef TMC_RA_RUNTIME_TEST
+    memory->fully_validated = adapter != NULL && adapter->memory_fully_validated;
+#else
     memory->fully_validated = false;
+#endif
     if (adapter != NULL)
         adapter->memory_fully_validated = memory->fully_validated;
     return NRA_OK;
@@ -58,6 +62,10 @@ static bool tmc_ra_admit_mode(void* userdata, NRA_Mode requested_mode, bool game
     const TmcRaAdapter* adapter = userdata;
     const bool memory_fully_validated = adapter != NULL && adapter->memory_fully_validated;
 
+    if (requested_mode != NRA_MODE_LIVE_CASUAL)
+        return false;
+    if (!game_loaded && memory_fully_validated)
+        return true;
     return TmcRaPolicy_AdmitMode(requested_mode, game_loaded, memory_fully_validated) == requested_mode;
 }
 

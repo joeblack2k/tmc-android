@@ -285,7 +285,7 @@ public final class RAAndroidBridge {
         form.addView(username);
         form.addView(password);
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setTitle("RetroAchievements Spectator")
+                .setTitle("RetroAchievements Casual")
                 .setView(form)
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton(android.R.string.ok, null)

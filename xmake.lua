@@ -1359,7 +1359,7 @@ target("tmc_ra_runtime_test")
         set_targetdir("build/pc")
     end
     add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
-    add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
+    add_defines("PC_PORT", "TMC_RA_MEMORY_TEST", "TMC_RA_RUNTIME_TEST")
     add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c",
               "port/ra/tmc_ra_policy.c",
               "port/ra/tmc_ra_ui_bridge.c", "port/ra/tmc_ra_runtime_test.c")

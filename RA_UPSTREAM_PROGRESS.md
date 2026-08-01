@@ -5,11 +5,11 @@
 - Upstream repository: `https://github.com/samyost1/tmc-android.git`
 - Upstream branch: `dual-screen-native`
 - Upstream base SHA: `b03cbe5a690b52fe9ea27534fc43a14970a522af`
-- User fork (`joeblack2k/tmc-android`): not created or pushed
+- User fork (`joeblack2k/tmc-android`): created, pushed, and used as the PR head
 - Integration branch: `feature/native-retroachievements-port`
-- Latest committed milestone: `abcae302` (encrypted Android RA outbox store)
-- Current working tree: P4-P10 integration and evidence updates are intentionally
-  uncommitted on `feature/native-retroachievements-port`
+- Latest published milestone: `13a0838d` (RA parity tooling and publication evidence)
+- Current working tree: Casual-only admission/UI corrections are being verified on
+  `feature/native-retroachievements-port`
 - Donor snapshot: `zeldaTMC.zip`, SHA-256
   `c5e6e82554ecdf303290d75d981be3e6d449a44c7d79b544edee599576ee0295`,
   embedded donor revision `11b313dcfc51609e6a4fa9508cbb914eea2b5243`
@@ -23,7 +23,7 @@
   legal USA ROM and an isolated title save for local parity work; no emulator
   state or credentials were added. The current upstream
   `samyost1/tmc-android` is itself a fork of `Raekwon1603/tmc-android`; the user
-  fork `joeblack2k/tmc-android` does not exist yet.
+  fork `joeblack2k/tmc-android` carries the published branch.
 
 ## Security Inventory
 
@@ -49,10 +49,11 @@
   title save is mode 600; its contents and fingerprint are not recorded in this
   ledger. The ignored mGBA metadata retains a SHA-256 provenance field only.
 - Credentials present in Git: no.
-- GitHub auth recheck 2026-07-31: `gh auth status` confirms the active
+- GitHub auth recheck 2026-08-01: `gh auth status` confirms the active
   `joeblack2k` account with `repo` and `workflow` scopes; the target fork
-  `joeblack2k/tmc-android` does not exist, and `origin` remains the upstream
-  repository until the authenticated Spectator/parity gates are accepted.
+  `joeblack2k/tmc-android` is the `origin` push target; draft PR #16 targets
+  `samyost1/tmc-android:dual-screen-native`. Casual admission remains blocked
+  until the parity gates are accepted.
 
 ## Milestone Status
 
@@ -63,15 +64,15 @@
 | P2 memory adapter | IMPLEMENTED, PARITY-BLOCKED | `d8a6bb25` | Fail-closed memory/adapter tests and manifest validators pass; unresolved bytes remain invalid | Canonical-ROM memory parity and requested-address coverage are unavailable without a legal ROM/capture |
 | P3 runtime wiring | HOST/ANDROID BUILT | `0173fbcb` | Owner-thread runtime, snapshot publication, foreign-thread no-ops, monotonic time and lifecycle cleanup pass; both Android ABIs link | Submission proof, canonical parity, and full gameplay matrix remain open |
 | P4 Android secure login | SOURCE + HOST TESTED, DEVICE LOGIN PROVEN | Uncommitted | Generation-tagged queue, JNI owner-thread drain, HTTPS allowlist, bounded executor, API-23-compatible AES-256-GCM Keystore credential store, mutable-byte credential/JNI paths, RA-only manifest policy, lifecycle detach/reopen, and password dialog are implemented and tested; Thor accepts password login and re-login after logout | Authenticated set/game submission and encrypted outbox replay remain unproven |
-| P5 RA panel | SOURCE + HOST TESTED, DEVICE PANEL PROVEN | Uncommitted | Status/account/mode/metadata/achievement/toast bridge and second-screen panel source are implemented; Thor shows the live second-screen map/HUD and authenticated RA status with online Spectator set data | Full S0-S14 parity and achievement-trigger evidence remain open |
-| P6 Spectator APK | SIDE-BY-SIDE INSTALLED, AUTHENTICATED START PROVEN | Uncommitted | `dev.picori.tmc.ra` and vanilla `dev.picori.tmc` coexist on AYN Thor; RA has `INTERNET`, vanilla does not; both carry arm64-v8a and x86_64; the trigger-enabled RA APK hash matches the device base APK; authenticated Spectator panel is visible | Submission, canonical parity, and release/PR gates remain open |
+| P5 RA panel | SOURCE + HOST TESTED, DEVICE PANEL PROVEN | `3d70eafa` + working correction | Status/account/mode/metadata/achievement/toast bridge and second-screen panel source are implemented; the user-facing mode is static Casual and the Casual chip is not a mode toggle | Full S0-S14 parity and achievement-trigger evidence remain open |
+| P6 RA APK | SIDE-BY-SIDE INSTALLED, AUTHENTICATED START PROVEN | `3d70eafa` + working correction | `dev.picori.tmc.ra` and vanilla `dev.picori.tmc` coexist on AYN Thor; RA has `INTERNET`, vanilla does not; both carry arm64-v8a and x86_64; the trigger-enabled RA APK hash matches the device base APK | Casual admission remains fail-closed before game identification until parity is proven |
 | P7 Casual state/policy | IMPLEMENTED, ADMISSION BLOCKED | Uncommitted | Versioned CRC state block, fail-closed Casual/Strict predicates, quicksave policy guards and focused tests pass | Casual admission remains blocked until memory validation/parity is proven |
 | P8 outbox | HOST + ANDROID TESTED | Uncommitted + `abcae302` | Encrypted Android store, JNI secure-blob bridge, bounded CRC journal, journal-before-HTTP, confirmed-success removal, replay scoping and mixed-scope regression pass | Thor encrypted outbox/replay and authenticated submission are not physically proven |
 | P9 address union | TOOLING PASS, EVIDENCE OPEN | Uncommitted | Ordered `tools/ra/tmc_ra_state_manifest.json` covers S0-S14; strict matrix comparator validates identity, phase, generation, requested counters, and fail-closed cumulative union; native post-evaluation capture and shared V1 input-replay contracts pass; the Linux CI leg exercises the C capture-contract test; the Android app-scoped operator trigger is physically proven separately | A current S0 validated-scope capture exists, but its requested bitmap is empty without an authenticated RA set; synchronized S0-S14 native/mGBA captures are absent, so union and full parity remain unverified |
-| M0 lifecycle hardening | HOST + DEVICE LIFECYCLE PROVEN | Uncommitted | Identify retries are bounded at two attempts; failed token/password login and logout unload RA state; Spectator/Live boundary changes are locked while a game is loaded or loading; focused tests pass under ASan/UBSan and TSan; Thor proves login, token restore after relaunch, logout cleanup, and re-login | Invalid-token behavior is host-tested; full memory/parity and submission gates remain open |
-| M1 authenticated Spectator flow | DEVICE PASS | Uncommitted | On Thor, legal ROM gameplay reaches file select and first overworld; the external display shows RA status with authenticated account state, `SPECTATOR`, `ONLINE`, the identified Minish Cap set, and achievement/points counters | No submission was attempted; this is service/panel proof, not parity proof |
+| M0 lifecycle hardening | HOST + DEVICE LIFECYCLE PROVEN | `9f05b58a` + working correction | Identify retries are bounded at two attempts; failed token/password login and logout unload RA state; Casual-only admission is locked while parity is unproven; focused tests pass under ASan/UBSan and TSan; Thor proves login, token restore after relaunch, logout cleanup, and re-login | Invalid-token behavior is host-tested; full memory/parity and submission gates remain open |
+| M1 authenticated RA service flow | DEVICE PASS, HISTORICAL | `13a0838d` | On Thor, legal ROM gameplay reaches file select and first overworld; the external display showed authenticated RA account/set state and achievement counters. This historical service proof is retained for connectivity only; it is not Casual admission proof | No submission was attempted; canonical parity remains open |
 | M2 credential lifecycle | DEVICE + HOST PASS | Uncommitted | Force-stop/relaunch restores authenticated state; explicit logout changes the panel to `NOT LOGGED IN`, `LOGIN REQUIRED`, `UNKNOWN`, and `NO SET LOADED`; a subsequent password login restores `ONLINE` set state; native rejected-token cleanup tests pass | Physical invalid-token injection and encrypted outbox replay remain untested |
-| P10 PR extraction | OPEN | | Ledger/security evidence is updated; current-tree gitleaks is clean and the three historical candidates are documented false positives | No fork remote, push or PR exists; gameplay matrix, parity, outbox, release, and submission gates remain open |
+| P10 PR extraction | DRAFT PR OPEN | `13a0838d` + working correction | Ledger/security evidence is published on the user fork; current-tree gitleaks is clean and the three historical candidates are documented false positives | Gameplay matrix, parity, outbox replay, release, and submission gates remain open |
 
 ## Baseline Matrix
 
@@ -121,6 +122,7 @@ Existing baseline warnings:
 | P3 runtime lifecycle | `tmc_ra_runtime_test` | PASS | Snapshot publication precedes game identification; foreign-thread frame/idle/reset/shutdown are no-ops; explicit reset/shutdown and default global `atexit` cleanup are exercised under host sanitizers |
 | P3 monotonic time | `tmc_ra_runtime_test` | PASS | A 20 ms sleep advances the `CLOCK_MONOTONIC` runtime clock by at least 10 ms |
 | P3 checkpoint | Read-only runtime/lifecycle review | PASS | Snapshot ordering, owner-thread guards, monotonic time, transportless default platform, and ledger claims reviewed after corrections |
+| Casual-only admission gate | `tmc_ra_runtime_test`, `tmc_ra_adapter_test`, `tmc_ra_ui_bridge_test` | PASS | TMC init requests Casual and destroys the context when parity admission is false; the adapter rejects Spectator and the UI bridge remains unavailable after reset |
 | P4 queue | `tmc_ra_android_queue_test` under ASan/UBSan and TSan | PASS | Capacity, copied HTTP body, stale-generation rejection, one password slot, and shutdown admission tests pass |
 | P4 Android queue | arm64-v8a and x86_64 `tmc_ra_android_queue_test` | PASS | Both Android API 21 test binaries link |
 | P4 host queue current | `xmake f -y -p macosx --game_version=USA --enable_retroachievements=y --pc_sanitize=y --pc_tsan=n && xmake build -r -y tmc_ra_android_queue_test && ./build/pc/tmc_ra_android_queue_test` | PASS | Token login, secure wipe helper, close/reopen, stale-generation rejection, and capacity pass under ASan/UBSan |
@@ -157,7 +159,7 @@ Existing baseline warnings:
 | P9 shared input replay | `sh tools/ra/build_mgba_reference_capture.sh && ./tools/ra/mgba_reference_capture --self-test && xmake build -y tmc_pc` | PASS | Shared `TMC_RA_INPUT_REPLAY_V1` parser validates the complete file before consumption; native uses `TMC_RA_INPUT_REPLAY=<path>`, mGBA uses `--input-replay FILE`, both use pressed GBA masks, absent replay preserves live/zero-key behavior, and the self-test covers records at 65535/65536 |
 | P9 S0 post-evaluation capture | Host `tmc_pc` with the legal USA ROM/title save and an empty `TMC_RA_INPUT_REPLAY_V1`, plus the mGBA reference tool at frame 60 | VALIDATED-SCOPE PASS, REQUESTED OPEN | Native metadata carries `state=S0`, `checkpoint=boot/title`, `phase=post-evaluation`, frame `60`, generation `60`, and the public ROM identity; the synchronized reference capture is valid. Validated-scope comparison matches `141794/141794` bytes with no unknown, mismatch, or provenance ranges; both captures still have zero requested bytes without an authenticated RA set |
 | P9 phase-aware memory scope | Sanitized `tmc_ra_memory_test` and `tmc_ra_adapter_test` after the S0 comparison | PASS | Snapshot offset `0x1000` (`gMain.interruptFlag`) is invalidated as phase-dependent synchronization state; if requested, the adapter remains fail-closed rather than claiming parity |
-| P9 Android app-scoped operator capture | Explicit `RA_CAPTURE` component intent on installed `dev.picori.tmc.ra`, authenticated Spectator state, then app-data bundle inspection | DEVICE PASS | Thor capture `S2` reports `checkpoint=new game intro`, `phase=post-evaluation`, `requested_bytes=56`, `requested_ranges=53`; exactly `metadata.json`, `snapshot.bin`, `provenance.bin`, `validity.bin`, and `requested.bin` were created under the app-scoped `ra-captures/S2/native` directory; pulled only to `/tmp`, not committed |
+| P9 Android app-scoped operator capture | Explicit `RA_CAPTURE` component intent on installed `dev.picori.tmc.ra`, authenticated RA state, then app-data bundle inspection | DEVICE PASS | Thor capture `S2` reports `checkpoint=new game intro`, `phase=post-evaluation`, `requested_bytes=56`, `requested_ranges=53`; exactly `metadata.json`, `snapshot.bin`, `provenance.bin`, `validity.bin`, and `requested.bin` were created under the app-scoped `ra-captures/S2/native` directory; pulled only to `/tmp`, not committed |
 | P9 title checkpoint parity | `python3 tools/ra/compare_tmc_ra_snapshot.py --native artifacts/ra-local/20260801-title-60-native --reference artifacts/ra-local/20260801-title-60-mgba --validated-scope` | BLOCKED BY CURRENT CONTRACT | The pre-contract title artefact is rejected with `FAIL: native: invalid state`; it remains historical limited-scope context only, not current admissible evidence |
 | P9 manifest/parity readiness | `python3 tools/ra/validate_ra_manifest.py --self-test && python3 tools/ra/validate_ra_manifest.py && python3 tools/ra/generate_tmc_memory_map.py --check` | PASS WITH OPEN DATA | Manifest hash `ac01bf3b7e31c38eb0cb38a4cf8deadc587d71a99c394005a631c64fba2dae5b`; 10 symbols remain unresolved |
 | P9 S0-S14 matrix gate | `python3 -m unittest discover -s tools/ra/tests -p 'test_*.py' -v`; `python3 tools/ra/compare_tmc_ra_snapshot.py --self-test`; `python3 tools/ra/merge_tmc_ra_requested.py --self-test` | PASS, EVIDENCE OPEN | 20 Python tests plus snapshot/manifest/merge self-tests pass; comparator requires native generation, positive requested ranges, zero invalid-read counters, and exact requested bytes; merge uses validated in-memory bitmaps and all missing/tampered/empty cases remain fail-closed |
@@ -178,8 +180,11 @@ Existing baseline warnings:
   matches the local artifact exactly.
 - Top display result: RA prelaunch screen, file select, new-game flow, and first controllable overworld are physically visible on the primary display.
 - Bottom display result: the 1240x1080 second-screen surface renders the live map/HUD and the RA status panel on display 4.
-- RA login result: PASS. The authenticated panel shows account state, `SPECTATOR`, `ONLINE`, the identified Minish Cap set, and `1/67` achievements with `0/705` points; no submission was attempted.
-- App-scoped capture trigger result: PASS. With the authenticated Spectator
+- RA login result: PASS, HISTORICAL SERVICE CHECK. The authenticated panel showed
+  account state, `ONLINE`, the identified Minish Cap set, and `1/67` achievements
+  with `0/705` points; no submission was attempted. Casual admission was not
+  claimed.
+- App-scoped capture trigger result: PASS. With the authenticated RA
   panel visible and the primary game in the new-game intro, the explicit
   `RA_CAPTURE` intent for `S2` created the five-file bundle under
   `Android/data/dev.picori.tmc.ra/files/ra-captures/S2/native`. Metadata reports
@@ -188,11 +193,11 @@ Existing baseline warnings:
   private device capture was added to the repository.
 - Historical pre-login recheck 2026-08-01: installing and bringing the
   then-current `dev.picori.tmc.ra` to the foreground produced the empty
-  Spectator login surface; that historical frame-index-fix artifact was
+  RA login surface; that historical frame-index-fix artifact was
   `800e0547cc6f0c1de973428067c9fe6121789865cea99013ba5ab6d08ee81a6e`.
   It is not the current installed APK; the later M1/M2 evidence below
   supersedes the pre-login state.
-- Token restore result: PASS. After force-stop/relaunch and loading the existing slot, the same online Spectator set state reappears without a password prompt.
+- Token restore result: PASS. After force-stop/relaunch and loading the existing slot, the same online RA set state reappears without a password prompt.
 - Logout/re-login result: PASS. Logout removes the account/set state from the panel; a subsequent password login restores the online set state.
 - Lifecycle matrix result: process stop/start and vanilla/RA package switch had no linker/Java crash; full rotate/recreate matrix remains open.
 - Durable outbox result: host/mock persistence, scoped replay and confirmed-success removal pass; no Android encrypted record or authenticated replay was created on Thor.
@@ -255,7 +260,7 @@ Existing baseline warnings:
 - Behavior changed: with RA enabled, Android now attaches a Java bridge,
   queues HTTPS completions and login material for the game-owner thread,
   persists only successful token credentials in an AES-256-GCM Android Keystore
-  record excluded from backup, shows a Spectator-only password dialog, and
+  record excluded from backup, shows a Casual-only password dialog, and
   stores replayable submissions in an encrypted bounded outbox. Achievement
   metadata now carries immutable badge URLs; Android fetches only allowlisted
   media with bounded PNG decoding, and the native second-screen cache renders
@@ -265,8 +270,8 @@ Existing baseline warnings:
   `dev.picori.tmc.ra` and gates the bridge with `RA_ENABLED=true`.
 - M0 lifecycle behavior: native identification retries only once after a
   failed load, failed token/password login and logout unload any loaded or
-  pending game state, and Spectator/Live boundary changes are rejected while a
-  game is loaded or loading so the wrapper and rcheevos mode cannot diverge.
+  pending game state, and Casual admission is locked while a game is loaded or
+  loading so the wrapper and rcheevos mode cannot diverge.
 - Behavior intentionally unchanged: upstream launcher, display, map, dungeon,
   widescreen, and unauthenticated gameplay remain unchanged. Authenticated RA
   game identification is now physically proven; achievement submission,
@@ -305,6 +310,5 @@ Use the ignored canonical-USA ROM and isolated save to define a legal
 checkpoints with the authenticated set loaded before each requested bitmap is
 recorded. Then run the strict cumulative union comparator; only after every
 requested byte is valid/matching may Casual admission proceed. Until those gates
-exist, keep Casual admission fail-closed and do not prepare a public PR. Extract
-focused private commits only after the matrix and release evidence are complete;
-do not publish the current broad working tree as one PR.
+exist, keep Casual admission fail-closed and update draft PR #16 with focused
+commits only.

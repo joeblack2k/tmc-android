@@ -65,7 +65,9 @@ static void* ForeignLifecycle(void* userdata) {
 
 int main(void) {
     RuntimeFixture fixture = {0};
+    RuntimeFixture gate_fixture = {0};
     TmcRaRuntime runtime = {0};
+    TmcRaRuntime gate_runtime = {0};
     pthread_t thread;
     void* result = NULL;
     uint8_t rom[] = { 0x12, 0x34, 0x56, 0x78 };
@@ -85,6 +87,17 @@ int main(void) {
     monotonic_before = TmcRaRuntime_MonotonicMs();
     if (nanosleep(&delay, NULL) != 0 || TmcRaRuntime_MonotonicMs() < monotonic_before + 10)
         return 1;
+
+    /* No parity admission means Casual initialization must fail closed. */
+    TmcRaRuntime_TestSetCasualReady(false);
+    if (TmcRaRuntime_Init(&gate_runtime, &platform, &gate_fixture) ||
+        TmcRaRuntime_IsInitialized(&gate_runtime) ||
+        gate_runtime.context != NULL ||
+        gate_runtime.owner_thread_set ||
+        gate_fixture.shutdowns != 1)
+        return 1;
+
+    TmcRaRuntime_TestSetCasualReady(true);
     gRomData = rom;
     gRomSize = sizeof(rom);
     fixture.runtime = &runtime;
