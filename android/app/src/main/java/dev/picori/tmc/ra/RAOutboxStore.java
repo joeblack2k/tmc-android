@@ -62,7 +62,9 @@ public final class RAOutboxStore {
             plain = null;
             return result;
         } catch (FileNotFoundException ignored) {
-            return null;
+            // An empty byte array is the stable "no record" sentinel. Null is
+            // reserved for an unreadable or unauthenticated record.
+            return new byte[0];
         } catch (Exception ignored) {
             deleteQuietly();
             return null;
@@ -134,6 +136,10 @@ public final class RAOutboxStore {
 
     static boolean isValidPayloadSize(int size) {
         return size >= 0 && size <= MAX_PAYLOAD_BYTES;
+    }
+
+    static boolean isMissingPayload(byte[] payload) {
+        return payload != null && payload.length == 0;
     }
 
     static boolean isValidRecordSize(int size) {

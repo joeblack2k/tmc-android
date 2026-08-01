@@ -18,6 +18,13 @@ public final class RAOutboxStoreTest {
     }
 
     @Test
+    public void distinguishesMissingFromUnreadablePayload() {
+        assertTrue(RAOutboxStore.isMissingPayload(new byte[0]));
+        assertFalse(RAOutboxStore.isMissingPayload(null));
+        assertFalse(RAOutboxStore.isMissingPayload(new byte[] {1}));
+    }
+
+    @Test
     public void rejectsMalformedEnvelope() {
         byte[] record = new byte[RAOutboxStore.MIN_RECORD_BYTES];
         record[0] = 'R';
