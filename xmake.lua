@@ -872,12 +872,19 @@ target("tmc_pc")
     add_files("port/port_upscale.c") -- xBRZ-style pixel-art upscaler
     add_files("port/port_save.c")        -- EEPROM save emulation
     if has_config("enable_retroachievements") then
-        -- P3 links the owner-thread runtime and fail-closed snapshot bridge.
-        -- Android transport and UI remain unlinked.
+        -- Native RA runtime, fail-closed memory bridge, Android transport, and
+        -- value-only UI/state presentation stay behind this opt-in flag.
         add_defines("TMC_ENABLE_RETROACHIEVEMENTS=1")
         add_includedirs("port/ra", "libs/native_ra/include", "libs/rcheevos/include")
-        add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c")
+        add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c",
+                  "port/ra/tmc_ra_ui_bridge.c", "port/ra/tmc_ra_toast_presentation.c",
+                  "port/ra/tmc_ra_badge_cache.c", "port/ra/tmc_ra_badge_gate.c",
+                  "port/ra/tmc_ra_state.c", "port/ra/tmc_ra_policy.c",
+                  "port/ra/tmc_ra_capture.c")
         add_deps("native_ra")
+        if is_plat("android") then
+            add_files("port/ra/tmc_ra_android_queue.c", "port/ra/tmc_ra_android.c")
+        end
     end
     add_files("port/port_softslots.c")   -- Extra item-equip buttons (X/Y/L2/R2)
     add_files("port/port_second_screen.c") -- Second-display panel (AYN Thor); compositor compiles everywhere, surface plumbing is Android-only
@@ -1248,7 +1255,8 @@ target("native_ra")
     add_defines("RC_CLIENT_SUPPORTS_HASH")
     add_includedirs("libs/native_ra/include", {public = true})
     add_includedirs("libs/rcheevos/include")
-    add_files("libs/native_ra/src/native_ra.c", "libs/native_ra/src/native_ra_outbox.c")
+    add_files("libs/native_ra/src/native_ra.c", "libs/native_ra/src/native_ra_outbox.c",
+              "libs/native_ra/src/native_ra_outbox_journal.c")
     add_deps("rcheevos")
 target_end()
 
@@ -1294,6 +1302,29 @@ target("tmc_ra_memory_test")
     add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_memory_test.c")
 target_end()
 
+target("tmc_ra_capture_contract_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_tsan") then
+        add_cflags("-fsanitize=thread", "-fno-omit-frame-pointer")
+        add_ldflags("-fsanitize=thread", {force = true})
+    elseif has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    if is_plat("android") then
+        set_targetdir("build/android/" .. (get_config("arch") or "arm64-v8a") .. "/tests")
+    else
+        set_targetdir("build/pc")
+    end
+    add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
+    add_defines("PC_PORT", "TMC_ENABLE_RETROACHIEVEMENTS", "TMC_RA_MEMORY_TEST")
+    add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_capture.c",
+              "port/ra/tmc_ra_capture_contract_test.c")
+    add_files("port/ra/tmc_ra_memory_test.c",
+              {force = {cxflags = "-Dmain=tmc_ra_memory_fixture_main"}})
+target_end()
+
 target("tmc_ra_adapter_test")
     set_kind("binary")
     set_languages("c11")
@@ -1308,7 +1339,8 @@ target("tmc_ra_adapter_test")
     end
     add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
     add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
-    add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_adapter_test.c")
+    add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_policy.c",
+              "port/ra/tmc_ra_adapter_test.c")
 target_end()
 
 target("tmc_ra_runtime_test")
@@ -1329,7 +1361,8 @@ target("tmc_ra_runtime_test")
     add_includedirs(".", "include", "port", "port/ra", "libs/native_ra/include", "libs/rcheevos/include")
     add_defines("PC_PORT", "TMC_RA_MEMORY_TEST")
     add_files("port/ra/tmc_ra_memory.c", "port/ra/tmc_ra_adapter.c", "port/ra/tmc_ra_runtime.c",
-              "port/ra/tmc_ra_runtime_test.c")
+              "port/ra/tmc_ra_policy.c",
+              "port/ra/tmc_ra_ui_bridge.c", "port/ra/tmc_ra_runtime_test.c")
     add_deps("native_ra")
 target_end()
 
@@ -1352,13 +1385,106 @@ target("tmc_ra_android_queue_test")
     add_files("port/ra/tmc_ra_android_queue.c", "port/ra/tmc_ra_android_queue_test.c")
 target_end()
 
+target("tmc_ra_ui_bridge_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_tsan") then
+        add_cflags("-fsanitize=thread", "-fno-omit-frame-pointer")
+        add_ldflags("-fsanitize=thread", {force = true})
+    elseif has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/include", "port/ra")
+    add_files("port/ra/tmc_ra_ui_bridge.c", "port/ra/tmc_ra_ui_bridge_test.c")
+    add_deps("native_ra")
+target_end()
+
+target("tmc_ra_toast_presentation_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/include", "port/ra")
+    add_files("port/ra/tmc_ra_toast_presentation.c", "port/ra/tmc_ra_toast_presentation_test.c")
+target_end()
+
+target("tmc_ra_badge_cache_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/include", "port/ra")
+    add_files("port/ra/tmc_ra_badge_cache.c", "port/ra/tmc_ra_badge_cache_test.c")
+target_end()
+
+target("tmc_ra_badge_gate_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/include", "port/ra")
+    add_files("port/ra/tmc_ra_badge_cache.c", "port/ra/tmc_ra_badge_gate.c",
+              "port/ra/tmc_ra_badge_gate_test.c")
+target_end()
+
+target("tmc_ra_state_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", {force = true})
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("port/ra")
+    add_files("port/ra/tmc_ra_state.c", "port/ra/tmc_ra_state_test.c")
+target_end()
+
+target("tmc_ra_policy_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", {force = true})
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/include", "port/ra")
+    add_files("port/ra/tmc_ra_policy.c", "port/ra/tmc_ra_policy_test.c")
+target_end()
+
 target("native_ra_outbox_test")
     set_kind("binary")
     set_languages("c11")
     set_targetdir("build/pc")
-    add_includedirs("libs/native_ra/src")
+    add_includedirs("libs/native_ra/src", "libs/rcheevos/include")
     add_files("libs/native_ra/src/native_ra_outbox.c")
     add_files("libs/native_ra/tests/native_ra_outbox_test.c")
+    add_deps("rcheevos")
+target_end()
+
+target("native_ra_outbox_journal_test")
+    set_kind("binary")
+    set_languages("c11")
+    if has_config("pc_sanitize") then
+        add_cflags("-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=all")
+        add_ldflags("-fsanitize=address,undefined", {force = true})
+    end
+    set_targetdir("build/pc")
+    add_includedirs("libs/native_ra/src", "libs/rcheevos/include")
+    add_files("libs/native_ra/src/native_ra_outbox.c",
+              "libs/native_ra/src/native_ra_outbox_journal.c")
+    add_files("libs/native_ra/tests/native_ra_outbox_journal_test.c")
+    add_deps("rcheevos")
 target_end()
 
 

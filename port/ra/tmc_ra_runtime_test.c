@@ -12,6 +12,7 @@
 typedef struct {
     TmcRaRuntime* runtime;
     unsigned requests;
+    unsigned failed_game_loads;
     unsigned shutdowns;
     uint32_t generation_on_game_request;
 } RuntimeFixture;
@@ -28,7 +29,7 @@ static uint64_t Now(void* userdata) {
 
 static void Begin(void* userdata, NRA_RequestId id, const NRA_HttpRequest* request) {
     RuntimeFixture* fixture = userdata;
-    const NRA_HttpCompletion completion = {
+    NRA_HttpCompletion completion = {
         .request_id = id,
         .http_status_code = 200,
         .body = (const uint8_t*)kLoginResponse,
@@ -38,7 +39,12 @@ static void Begin(void* userdata, NRA_RequestId id, const NRA_HttpRequest* reque
     ++fixture->requests;
     if (fixture->requests == 1)
         (void)nra_enqueue_http_completion(fixture->runtime->context, &completion);
-    else if (fixture->requests == 2)
+    else if (fixture->requests >= 2 && fixture->failed_game_loads != 0) {
+        completion.body = (const uint8_t*)"{}";
+        completion.body_size = 2;
+        --fixture->failed_game_loads;
+        (void)nra_enqueue_http_completion(fixture->runtime->context, &completion);
+    } else if (fixture->requests == 2)
         fixture->generation_on_game_request = TmcRaMemory_Current().generation;
 }
 
@@ -65,6 +71,7 @@ int main(void) {
     uint8_t rom[] = { 0x12, 0x34, 0x56, 0x78 };
     uint32_t generation_before_frame;
     uint32_t generation;
+    TmcRaFrameView frame_view;
     uint64_t monotonic_before;
     const struct timespec delay = {.tv_nsec = 20000000L};
     const NRA_PlatformVTable platform = {
@@ -91,16 +98,60 @@ int main(void) {
     pthread_join(thread, &result);
     if (result != NULL || !TmcRaRuntime_IsInitialized(&runtime) || fixture.requests != 1)
         return 1;
+    TmcRaMemory_ResetRequestedCoverage();
+    (void)TmcRaMemory_Read(0x0010, NULL);
+    TmcRaMemory_TestResetCoverageResetCount();
     if (TmcRaRuntime_Frame(&runtime) || fixture.requests != 2
-        || fixture.generation_on_game_request != generation_before_frame + 1)
+        || fixture.generation_on_game_request != generation_before_frame + 1 ||
+        TmcRaMemory_TestCoverageResetCount() != 1) {
+        fprintf(stderr, "runtime frame contract failed: reset_count=%u requests=%u generation=%u expected_generation=%u\n",
+                TmcRaMemory_TestCoverageResetCount(), fixture.requests,
+                fixture.generation_on_game_request, generation_before_frame + 1);
         return 1;
+    }
+    frame_view = TmcRaRuntime_FrameView(&runtime);
+    if (frame_view.snapshot.generation != TmcRaMemory_Current().generation ||
+        frame_view.coverage.selected_bytes != 0 ||
+        frame_view.audit.requested_bytes != 0) {
+        fprintf(stderr, "runtime frame view failed: view_generation=%u current_generation=%u coverage=%u audit_bytes=%u\n",
+                frame_view.snapshot.generation, TmcRaMemory_Current().generation,
+                frame_view.coverage.selected_bytes, frame_view.audit.requested_bytes);
+        return 1;
+    }
     generation = TmcRaMemory_Current().generation;
-    if (TmcRaRuntime_Frame(&runtime) || TmcRaMemory_Current().generation != generation + 1)
+    if (TmcRaRuntime_Frame(&runtime) || TmcRaMemory_Current().generation != generation + 1 ||
+        TmcRaMemory_TestCoverageResetCount() != 2) {
+        fprintf(stderr, "second runtime frame contract failed: reset_count=%u current_generation=%u expected_generation=%u\n",
+                TmcRaMemory_TestCoverageResetCount(), TmcRaMemory_Current().generation,
+                generation + 1);
         return 1;
+    }
     TmcRaRuntime_ResetCompleted(&runtime);
     TmcRaRuntime_Shutdown(&runtime);
     if (TmcRaRuntime_IsInitialized(&runtime) || fixture.shutdowns != 1)
         return 1;
+    {
+        RuntimeFixture retry_fixture = {.failed_game_loads = 2};
+        TmcRaRuntime retry_runtime = {0};
+
+        retry_fixture.runtime = &retry_runtime;
+        if (!TmcRaRuntime_Init(&retry_runtime, &platform, &retry_fixture) ||
+            nra_login_password(retry_runtime.context, "user", "password") != NRA_PENDING ||
+            TmcRaRuntime_Frame(&retry_runtime) || retry_fixture.requests != 2 ||
+            !retry_runtime.identify_requested ||
+            TmcRaRuntime_Frame(&retry_runtime) || retry_fixture.requests != 2 ||
+            retry_runtime.identify_requested || !retry_runtime.identify_retry_pending ||
+            TmcRaRuntime_Frame(&retry_runtime) || retry_fixture.requests != 3 ||
+            !retry_runtime.identify_requested ||
+            TmcRaRuntime_Frame(&retry_runtime) || retry_fixture.requests != 3 ||
+            retry_runtime.identify_requested || retry_runtime.identify_retry_pending ||
+            retry_runtime.identify_attempts != 2 ||
+            TmcRaRuntime_Frame(&retry_runtime) || retry_fixture.requests != 3) {
+            TmcRaRuntime_Shutdown(&retry_runtime);
+            return 1;
+        }
+        TmcRaRuntime_Shutdown(&retry_runtime);
+    }
     if (!TmcRaRuntime_InitDefault(&runtime) || !TmcRaRuntime_IsInitialized(&runtime))
         return 1;
     TmcRaRuntime_Idle(&runtime);

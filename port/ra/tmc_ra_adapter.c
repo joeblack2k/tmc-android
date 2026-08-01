@@ -2,6 +2,7 @@
 
 #include "port_rom.h"
 #include "tmc_ra_memory.h"
+#include "tmc_ra_policy.h"
 
 #include "rc_consoles.h"
 
@@ -21,7 +22,7 @@ static NRA_Result tmc_ra_get_rom(void* userdata, NRA_RomView* rom) {
 
 static NRA_Result tmc_ra_build_memory_snapshot(void* userdata, NRA_MemoryView* memory) {
     TmcRaSnapshotView snapshot;
-    (void)userdata;
+    TmcRaAdapter* adapter = userdata;
     if (memory == NULL)
         return NRA_INVALID_ARGUMENT;
 
@@ -31,6 +32,8 @@ static NRA_Result tmc_ra_build_memory_snapshot(void* userdata, NRA_MemoryView* m
     memory->generation = snapshot.generation;
     /* Live remains gated until every address in this canonical view is proven. */
     memory->fully_validated = false;
+    if (adapter != NULL)
+        adapter->memory_fully_validated = memory->fully_validated;
     return NRA_OK;
 }
 
@@ -49,6 +52,13 @@ static void tmc_ra_request_full_reset(void* userdata, uint32_t reason) {
     (void)reason;
     if (adapter != NULL)
         adapter->reset_requested = true;
+}
+
+static bool tmc_ra_admit_mode(void* userdata, NRA_Mode requested_mode, bool game_loaded) {
+    const TmcRaAdapter* adapter = userdata;
+    const bool memory_fully_validated = adapter != NULL && adapter->memory_fully_validated;
+
+    return TmcRaPolicy_AdmitMode(requested_mode, game_loaded, memory_fully_validated) == requested_mode;
 }
 
 static void tmc_ra_apply_capability_policy(void* userdata, const NRA_CapabilityPolicy* policy) {
@@ -82,6 +92,7 @@ const NRA_GameAdapterVTable* TmcRaAdapter_VTable(void) {
         .read_memory_snapshot = tmc_ra_read_memory_snapshot,
         .release_memory_snapshot = tmc_ra_release_memory_snapshot,
         .request_full_reset = tmc_ra_request_full_reset,
+        .admit_mode = tmc_ra_admit_mode,
         .apply_capability_policy = tmc_ra_apply_capability_policy,
         .accept_identified_game = tmc_ra_accept_identified_game,
     };
@@ -101,4 +112,8 @@ bool TmcRaAdapter_TakeResetRequest(TmcRaAdapter* adapter) {
 
 bool TmcRaAdapter_StrictMode(const TmcRaAdapter* adapter) {
     return adapter != NULL && adapter->strict_mode;
+}
+
+bool TmcRaAdapter_MemoryFullyValidated(const TmcRaAdapter* adapter) {
+    return adapter != NULL && adapter->memory_fully_validated;
 }

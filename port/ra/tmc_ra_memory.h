@@ -51,6 +51,12 @@ typedef struct {
 } TmcRaSnapshotView;
 
 typedef struct {
+    TmcRaSnapshotView snapshot;
+    TmcRaRequestedCoverage coverage;
+    TmcRaReadAudit audit;
+} TmcRaFrameView;
+
+typedef struct {
     const void* host;
     uint32_t gba_virtual;
     uint32_t host_bytes;
@@ -61,6 +67,7 @@ typedef struct {
 
 void TmcRaMemory_Publish(void);
 TmcRaSnapshotView TmcRaMemory_Current(void);
+TmcRaFrameView TmcRaMemory_CurrentFrameView(void);
 const char* TmcRaMemory_ManifestHash(void);
 void TmcRaMemory_ResetAudit(void);
 TmcRaReadAudit TmcRaMemory_ReadAudit(void);
@@ -88,6 +95,8 @@ bool TmcRaMemory_TranslateHostPointer(const void* pointer, const void* entity_po
 
 #ifdef TMC_RA_MEMORY_TEST
 void TmcRaMemory_TestSetAudit(TmcRaReadAudit audit);
+void TmcRaMemory_TestResetCoverageResetCount(void);
+uint32_t TmcRaMemory_TestCoverageResetCount(void);
 #endif
 
 #endif

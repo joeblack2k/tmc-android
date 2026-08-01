@@ -10,14 +10,8 @@ static void Wipe(void* data, size_t size) {
         *bytes++ = 0;
 }
 
-static size_t BoundedLength(const char* value, size_t limit) {
-    size_t size = 0;
-
-    if (value == NULL)
-        return limit + 1;
-    while (size <= limit && value[size] != '\0')
-        ++size;
-    return size;
+static bool ValidBytes(const uint8_t* value, size_t size, size_t limit) {
+    return value != NULL && size != 0 && size <= limit && memchr(value, 0, size) == NULL;
 }
 
 void TmcRaAndroidQueue_ReleaseCompletion(TmcRaAndroidCompletion* completion) {
@@ -39,9 +33,12 @@ static void ClearLocked(TmcRaAndroidQueue* queue) {
         queue->head = (queue->head + 1) % TMC_RA_ANDROID_QUEUE_CAPACITY;
         --queue->count;
     }
-    Wipe(queue->login.username, sizeof(queue->login.username));
-    Wipe(queue->login.password, sizeof(queue->login.password));
-    memset(&queue->login, 0, sizeof(queue->login));
+    TmcRaAndroidQueue_WipeLogin(&queue->login);
+}
+
+void TmcRaAndroidQueue_WipeLogin(TmcRaAndroidLogin* login) {
+    if (login != NULL)
+        Wipe(login, sizeof(*login));
 }
 
 bool TmcRaAndroidQueue_Init(TmcRaAndroidQueue* queue) {
@@ -87,6 +84,18 @@ uint64_t TmcRaAndroidQueue_AdvanceGeneration(TmcRaAndroidQueue* queue) {
         generation = ++queue->generation;
     pthread_mutex_unlock(&queue->mutex);
     return generation;
+}
+
+void TmcRaAndroidQueue_Reopen(TmcRaAndroidQueue* queue) {
+    if (queue == NULL)
+        return;
+    pthread_mutex_lock(&queue->mutex);
+    ClearLocked(queue);
+    ++queue->generation;
+    if (queue->generation == 0)
+        ++queue->generation;
+    queue->closed = false;
+    pthread_mutex_unlock(&queue->mutex);
 }
 
 void TmcRaAndroidQueue_Close(TmcRaAndroidQueue* queue) {
@@ -153,22 +162,43 @@ bool TmcRaAndroidQueue_TakeCompletion(TmcRaAndroidQueue* queue, uint64_t generat
 }
 
 bool TmcRaAndroidQueue_EnqueuePassword(TmcRaAndroidQueue* queue, uint64_t generation,
-                                       const char* username, const char* password) {
-    const size_t username_size = BoundedLength(username, TMC_RA_ANDROID_MAX_USERNAME_BYTES);
-    const size_t password_size = BoundedLength(password, TMC_RA_ANDROID_MAX_PASSWORD_BYTES);
-
-    if (queue == NULL || username_size == 0 || password_size == 0
-        || username_size > TMC_RA_ANDROID_MAX_USERNAME_BYTES
-        || password_size > TMC_RA_ANDROID_MAX_PASSWORD_BYTES)
+                                       const uint8_t* username, size_t username_size,
+                                       const uint8_t* password, size_t password_size) {
+    if (queue == NULL || !ValidBytes(username, username_size, TMC_RA_ANDROID_MAX_USERNAME_BYTES)
+        || !ValidBytes(password, password_size, TMC_RA_ANDROID_MAX_PASSWORD_BYTES))
         return false;
     pthread_mutex_lock(&queue->mutex);
     if (queue->closed || generation != queue->generation || queue->login.pending) {
         pthread_mutex_unlock(&queue->mutex);
         return false;
     }
-    memcpy(queue->login.username, username, username_size + 1);
-    memcpy(queue->login.password, password, password_size + 1);
+    memcpy(queue->login.username, username, username_size);
+    queue->login.username[username_size] = '\0';
+    memcpy(queue->login.password, password, password_size);
+    queue->login.password[password_size] = '\0';
     queue->login.generation = generation;
+    queue->login.pending = true;
+    pthread_mutex_unlock(&queue->mutex);
+    return true;
+}
+
+bool TmcRaAndroidQueue_EnqueueToken(TmcRaAndroidQueue* queue, uint64_t generation,
+                                    const uint8_t* username, size_t username_size,
+                                    const uint8_t* token, size_t token_size) {
+    if (queue == NULL || !ValidBytes(username, username_size, TMC_RA_ANDROID_MAX_USERNAME_BYTES)
+        || !ValidBytes(token, token_size, TMC_RA_ANDROID_MAX_TOKEN_BYTES))
+        return false;
+    pthread_mutex_lock(&queue->mutex);
+    if (queue->closed || generation != queue->generation || queue->login.pending) {
+        pthread_mutex_unlock(&queue->mutex);
+        return false;
+    }
+    memcpy(queue->login.username, username, username_size);
+    queue->login.username[username_size] = '\0';
+    memcpy(queue->login.token, token, token_size);
+    queue->login.token[token_size] = '\0';
+    queue->login.generation = generation;
+    queue->login.token_login = true;
     queue->login.pending = true;
     pthread_mutex_unlock(&queue->mutex);
     return true;
@@ -186,7 +216,7 @@ bool TmcRaAndroidQueue_TakePassword(TmcRaAndroidQueue* queue, uint64_t generatio
         return false;
     }
     *login = queue->login;
-    memset(&queue->login, 0, sizeof(queue->login));
+    TmcRaAndroidQueue_WipeLogin(&queue->login);
     pthread_mutex_unlock(&queue->mutex);
     return true;
 }

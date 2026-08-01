@@ -143,6 +143,9 @@ static TmcRaReadAudit sAudit;
 static uint8_t sRequestedCoverage[TMC_RA_SNAPSHOT_BYTES];
 static uint32_t sRequestedCoverageBytes;
 static uint32_t sRequestedCoverageOutOfRangeBytes;
+#ifdef TMC_RA_MEMORY_TEST
+static uint32_t sRequestedCoverageResetCount;
+#endif
 
 static bool IsRange(uint32_t offset, size_t bytes) {
     return offset <= TMC_RA_SNAPSHOT_BYTES && bytes <= TMC_RA_SNAPSHOT_BYTES - offset;
@@ -155,7 +158,10 @@ static void Mark(uint8_t* provenance, uint8_t* validated, uint32_t offset, size_
 }
 
 static void InvalidateFrameDivergences(TmcRaSnapshot* snapshot) {
-    const uint32_t offsets[] = { 0x00fdcu, 0x00ff7u, 0x0100cu };
+    /* These bytes are synchronization state, not stable post-frame gameplay
+     * state. The native and mGBA capture loops observe the VBlank handshake
+     * at different points around the same interrupt. */
+    const uint32_t offsets[] = { 0x00fdcu, 0x00ff7u, 0x01000u, 0x0100cu };
 
     for (size_t i = 0; i < sizeof(offsets) / sizeof(offsets[0]); ++i)
         Mark(snapshot->provenance, snapshot->validated, offsets[i], 1, TMC_RA_PROVENANCE_INVALID, false);
@@ -750,6 +756,12 @@ TmcRaSnapshotView TmcRaMemory_Current(void) {
     return view;
 }
 
+TmcRaFrameView TmcRaMemory_CurrentFrameView(void) {
+    return (TmcRaFrameView) {
+        TmcRaMemory_Current(), TmcRaMemory_RequestedCoverage(), TmcRaMemory_ReadAudit()
+    };
+}
+
 const char* TmcRaMemory_ManifestHash(void) {
     return TMC_RA_MEMORY_MANIFEST_SHA256;
 }
@@ -766,6 +778,9 @@ void TmcRaMemory_ResetRequestedCoverage(void) {
     memset(sRequestedCoverage, 0, sizeof(sRequestedCoverage));
     sRequestedCoverageBytes = 0;
     sRequestedCoverageOutOfRangeBytes = 0;
+#ifdef TMC_RA_MEMORY_TEST
+    ++sRequestedCoverageResetCount;
+#endif
 }
 
 TmcRaRequestedCoverage TmcRaMemory_RequestedCoverage(void) {
@@ -773,6 +788,16 @@ TmcRaRequestedCoverage TmcRaMemory_RequestedCoverage(void) {
         sRequestedCoverage, sRequestedCoverageBytes, sRequestedCoverageOutOfRangeBytes
     };
 }
+
+#ifdef TMC_RA_MEMORY_TEST
+void TmcRaMemory_TestResetCoverageResetCount(void) {
+    sRequestedCoverageResetCount = 0;
+}
+
+uint32_t TmcRaMemory_TestCoverageResetCount(void) {
+    return sRequestedCoverageResetCount;
+}
+#endif
 
 uint8_t TmcRaMemory_Read(uint32_t ra_physical, bool* valid) {
     AuditAdd(&sAudit.requested_ranges, 1);

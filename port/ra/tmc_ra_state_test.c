@@ -48,6 +48,8 @@ int main(void) {
     assert(block[4] == 1 && block[5] == 0 && block[6] == 0 && block[7] == 0);
     assert(block[8] == 0 && block[9] == 0 && block[10] == 0 && block[11] == 0);
     assert(block[12] == sizeof(expected) && block[13] == 0 && block[14] == 0 && block[15] == 0);
+    /* Independent CRC-32/ISO-HDLC vector for 21 43 65 87: 0x2040adbf. */
+    assert(block[16] == 0xbf && block[17] == 0xad && block[18] == 0x40 && block[19] == 0x20);
     assert(TmcRaState_Decode(block, sizeof(block), &decoded, &decoded_size) == TMC_RA_STATE_VALID);
     assert(decoded == block + TMC_RA_STATE_HEADER_SIZE);
     assert(decoded_size == sizeof(expected));

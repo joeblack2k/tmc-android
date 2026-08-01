@@ -1,11 +1,23 @@
 #include "native_ra_internal.h"
 
 #include "rc_consoles.h"
+#include "native_ra_outbox_journal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#define NRA_OUTBOX_STORAGE_KEY "native_ra.outbox"
+
+static bool nra_outbox_load(NRA_Context* context);
+static bool nra_outbox_append_request(NRA_Context* context, NRA_Request* request,
+                                      uint32_t game_id, uint32_t console_id,
+                                      const char* account, size_t account_size,
+                                      uint64_t* sequence);
+static void nra_outbox_replay(NRA_Context* context);
+static bool nra_outbox_confirm_completion(NRA_Context* context, const NRA_Request* request,
+                                          const NRA_Completion* completion);
 
 static uint32_t nra_read_memory(uint32_t address, uint8_t* buffer, uint32_t count, rc_client_t* client) {
     NRA_Context* context = rc_client_get_userdata(client);
@@ -54,6 +66,122 @@ static char* nra_strdup(const char* value) {
     return copy;
 }
 
+static char* nra_memdup_text(const uint8_t* value, size_t size) {
+    char* copy;
+
+    if (value == NULL || size == 0 || size == SIZE_MAX) {
+        return NULL;
+    }
+    copy = malloc(size + 1);
+    if (copy != NULL) {
+        memcpy(copy, value, size);
+        copy[size] = '\0';
+    }
+    return copy;
+}
+
+static bool nra_outbox_has_storage(const NRA_Context* context) {
+    return context != NULL && context->platform.secure_blob_get != NULL &&
+        context->platform.secure_blob_set != NULL &&
+        context->platform.secure_blob_delete != NULL;
+}
+
+static bool nra_outbox_store_candidate(NRA_Context* context, const uint8_t* blob, size_t size) {
+    NRA_Result result;
+
+    if (!context->outbox_durable) {
+        return true;
+    }
+    result = size == 0 || size == NRA_OUTBOX_JOURNAL_HEADER_SIZE
+        ? context->platform.secure_blob_delete(context->platform_userdata, NRA_OUTBOX_STORAGE_KEY)
+        : context->platform.secure_blob_set(context->platform_userdata, NRA_OUTBOX_STORAGE_KEY, blob, size);
+    if (result != NRA_OK) {
+        context->outbox_persistence_failed = true;
+        return false;
+    }
+    context->outbox_persistence_failed = false;
+    return true;
+}
+
+static bool nra_outbox_form_value(const char* post, const char* name,
+                                  const char** value, size_t* value_size) {
+    const char* item = post;
+    bool found = false;
+    size_t name_size;
+
+    if (post == NULL || name == NULL || value == NULL || value_size == NULL) {
+        return false;
+    }
+    name_size = strlen(name);
+    while (*item != '\0') {
+        const char* end = strchr(item, '&');
+        const char* equal = strchr(item, '=');
+        size_t current_name_size;
+
+        if (end == NULL) end = item + strlen(item);
+        if (equal == NULL || equal >= end) return false;
+        current_name_size = (size_t)(equal - item);
+        if (current_name_size == name_size && memcmp(item, name, name_size) == 0) {
+            if (found || equal + 1 == end) return false;
+            found = true;
+            *value = equal + 1;
+            *value_size = (size_t)(end - equal - 1);
+        }
+        item = *end == '\0' ? end : end + 1;
+    }
+    return found;
+}
+
+static void nra_outbox_hash_update(uint64_t* hash, const uint8_t* bytes, size_t size) {
+    size_t i;
+
+    for (i = 0; i < size; ++i) {
+        *hash ^= bytes[i];
+        *hash *= UINT64_C(1099511628211);
+    }
+}
+
+static void nra_outbox_hash_u64(uint64_t* hash, uint64_t value) {
+    uint8_t bytes[sizeof(value)];
+    size_t i;
+
+    for (i = 0; i < sizeof(bytes); ++i) {
+        bytes[i] = (uint8_t)(value >> (i * 8));
+    }
+    nra_outbox_hash_update(hash, bytes, sizeof(bytes));
+}
+
+static void nra_outbox_make_dedupe_key(NRA_OutboxKind kind, uint32_t game_id, uint32_t console_id,
+                                       const char* account, size_t account_size,
+                                       const char* post, size_t post_size,
+                                       uint8_t key[NRA_OUTBOX_JOURNAL_DEDUPE_KEY_SIZE]) {
+    static const uint64_t seeds[4] = {
+        UINT64_C(1469598103934665603),
+        UINT64_C(1099511628211),
+        UINT64_C(7809847782465536322),
+        UINT64_C(9659303129496669497)
+    };
+    size_t lane;
+
+    /* ponytail: four independent FNV-1a lanes keep dedupe dependency-free;
+     * the journal remains encrypted and this key is not an authorization token. */
+    for (lane = 0; lane < 4; ++lane) {
+        uint64_t hash = seeds[lane];
+        uint8_t kind_byte = (uint8_t)kind;
+        nra_outbox_hash_update(&hash, &kind_byte, sizeof(kind_byte));
+        nra_outbox_hash_u64(&hash, game_id);
+        nra_outbox_hash_u64(&hash, console_id);
+        nra_outbox_hash_u64(&hash, account_size);
+        nra_outbox_hash_update(&hash, (const uint8_t*)account, account_size);
+        nra_outbox_hash_u64(&hash, post_size);
+        nra_outbox_hash_update(&hash, (const uint8_t*)post, post_size);
+        nra_outbox_hash_u64(&hash, lane);
+        for (size_t i = 0; i < sizeof(hash); ++i) {
+            key[lane * sizeof(hash) + i] = (uint8_t)(hash >> (i * 8));
+        }
+    }
+}
+
 static void nra_free_request(NRA_Request* request) {
     if (request->post_data != NULL) {
         memset(request->post_data, 0, strlen(request->post_data));
@@ -63,6 +191,165 @@ static void nra_free_request(NRA_Request* request) {
     free(request->content_type);
     free(request->user_agent);
     memset(request, 0, sizeof(*request));
+}
+
+static bool nra_outbox_load(NRA_Context* context) {
+    NRA_Result result;
+    NRA_OutboxJournalResult journal_result;
+    size_t record_count = 0;
+    NRA_OutboxJournalRecord* records = NULL;
+
+    if (context->outbox_loaded) {
+        return true;
+    }
+    context->next_outbox_sequence = 1;
+    context->outbox_durable = nra_outbox_has_storage(context);
+    context->outbox_loaded = !context->outbox_durable;
+    if (!context->outbox_durable) {
+        return true;
+    }
+    if (context->outbox_blob == NULL) {
+        context->outbox_blob = calloc(1, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+        if (context->outbox_blob == NULL) {
+            return false;
+        }
+    }
+    result = context->platform.secure_blob_get(context->platform_userdata, NRA_OUTBOX_STORAGE_KEY,
+                                               context->outbox_blob, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES,
+                                               &context->outbox_size);
+    if (result != NRA_OK) {
+        if (result == NRA_DISABLED) {
+            context->outbox_size = 0;
+            return true;
+        }
+        context->outbox_persistence_failed = true;
+        context->outbox_loaded = true;
+        context->outbox_size = 0;
+        return true;
+    }
+    if (context->outbox_size == 0) {
+        context->outbox_loaded = true;
+        return true;
+    }
+    journal_result = nra_outbox_journal_validate(context->outbox_blob, context->outbox_size, &record_count);
+    if (journal_result != NRA_OUTBOX_JOURNAL_OK) {
+        context->outbox_size = 0;
+        if (context->platform.secure_blob_delete(context->platform_userdata, NRA_OUTBOX_STORAGE_KEY) != NRA_OK) {
+            context->outbox_persistence_failed = true;
+        }
+        context->outbox_loaded = true;
+        return true;
+    }
+    if (record_count != 0) {
+        records = calloc(record_count, sizeof(*records));
+        if (records == NULL ||
+            nra_outbox_journal_decode(context->outbox_blob, context->outbox_size, records,
+                                      record_count, &record_count) != NRA_OUTBOX_JOURNAL_OK) {
+            free(records);
+            context->outbox_size = 0;
+            if (context->platform.secure_blob_delete(context->platform_userdata, NRA_OUTBOX_STORAGE_KEY) != NRA_OK) {
+                context->outbox_persistence_failed = true;
+            }
+            context->outbox_loaded = true;
+            return true;
+        }
+        context->next_outbox_sequence = records[record_count - 1].sequence + 1;
+        if (context->next_outbox_sequence == 0) {
+            context->outbox_persistence_failed = true;
+        }
+    }
+    free(records);
+    context->outbox_loaded = true;
+    return true;
+}
+
+static bool nra_outbox_current_game(NRA_Context* context, uint32_t* game_id, uint32_t* console_id) {
+    const rc_client_game_t* game;
+
+    if (context == NULL || game_id == NULL || console_id == NULL || !context->game_loaded) {
+        return false;
+    }
+    game = rc_client_get_game_info(context->client);
+    if (game == NULL || game->id == 0 || game->console_id == 0) {
+        return false;
+    }
+    *game_id = game->id;
+    *console_id = game->console_id;
+    return true;
+}
+
+static bool nra_outbox_append_request(NRA_Context* context, NRA_Request* request,
+                                      uint32_t game_id, uint32_t console_id,
+                                      const char* account, size_t account_size,
+                                      uint64_t* sequence) {
+    NRA_OutboxJournalRecord record = {0};
+    uint8_t dedupe_key[NRA_OUTBOX_JOURNAL_DEDUPE_KEY_SIZE];
+    uint8_t* candidate;
+    size_t candidate_size;
+    NRA_OutboxJournalResult result;
+
+    if (sequence == NULL || request == NULL) {
+        return false;
+    }
+    *sequence = 0;
+    if (!context->outbox_durable) {
+        return true;
+    }
+    if (!context->outbox_loaded && !nra_outbox_load(context)) {
+        return false;
+    }
+    if (!context->outbox_loaded || context->outbox_persistence_failed ||
+        context->next_outbox_sequence == 0 || account == NULL || account_size == 0 ||
+        request->post_data == NULL || request->url == NULL || request->content_type == NULL) {
+        return false;
+    }
+    nra_outbox_make_dedupe_key(request->outbox_kind, game_id, console_id, account, account_size,
+                               request->post_data, strlen(request->post_data), dedupe_key);
+    record.sequence = context->next_outbox_sequence;
+    record.game_id = game_id;
+    record.console_id = console_id;
+    record.kind = request->outbox_kind;
+    record.status = NRA_OUTBOX_JOURNAL_PENDING;
+    record.account = (const uint8_t*)account;
+    record.account_size = account_size;
+    record.dedupe_key = dedupe_key;
+    record.dedupe_key_size = sizeof(dedupe_key);
+    record.url = (const uint8_t*)request->url;
+    record.url_size = strlen(request->url);
+    record.content_type = (const uint8_t*)request->content_type;
+    record.content_type_size = strlen(request->content_type);
+    record.post = (const uint8_t*)request->post_data;
+    record.post_size = strlen(request->post_data);
+
+    candidate = malloc(NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    if (candidate == NULL) {
+        return false;
+    }
+    if (context->outbox_size != 0) {
+        memcpy(candidate, context->outbox_blob, context->outbox_size);
+    }
+    candidate_size = 0;
+    result = nra_outbox_journal_append(candidate, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES,
+                                       context->outbox_size, &record, &candidate_size);
+    if (result != NRA_OUTBOX_JOURNAL_OK ||
+        !nra_outbox_store_candidate(context, candidate, candidate_size)) {
+        memset(candidate, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+        free(candidate);
+        return false;
+    }
+    memcpy(context->outbox_blob, candidate, candidate_size);
+    if (candidate_size < context->outbox_size) {
+        memset(context->outbox_blob + candidate_size, 0, context->outbox_size - candidate_size);
+    }
+    context->outbox_size = candidate_size;
+    *sequence = record.sequence;
+    context->next_outbox_sequence = record.sequence + 1;
+    if (context->next_outbox_sequence == 0) {
+        context->outbox_persistence_failed = true;
+    }
+    memset(candidate, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    free(candidate);
+    return true;
 }
 
 static void nra_log(NRA_Context* context, int level, const char* message) {
@@ -85,6 +372,18 @@ static void nra_copy_text(char* destination, size_t capacity, const char* source
     snprintf(destination, capacity, "%s", source);
 }
 
+static void nra_copy_badge_url(char* destination, size_t capacity,
+                               const rc_client_achievement_t* source, int state) {
+    char url[NRA_UI_IMAGE_URL_MAX];
+
+    if (capacity == 0)
+        return;
+    destination[0] = '\0';
+    if (source == NULL || rc_client_achievement_get_image_url(source, state, url, sizeof(url)) != RC_OK)
+        return;
+    nra_copy_text(destination, capacity, url);
+}
+
 static void nra_copy_achievement(NRA_UIAchievement* destination, const rc_client_achievement_t* source) {
     memset(destination, 0, sizeof(*destination));
     if (source == NULL) return;
@@ -94,6 +393,9 @@ static void nra_copy_achievement(NRA_UIAchievement* destination, const rc_client
     nra_copy_text(destination->title, sizeof(destination->title), source->title);
     nra_copy_text(destination->description, sizeof(destination->description), source->description);
     nra_copy_text(destination->badge_key, sizeof(destination->badge_key), source->badge_name);
+    nra_copy_badge_url(destination->badge_url, sizeof(destination->badge_url), source,
+                       source->unlocked ? RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED
+                                        : RC_CLIENT_ACHIEVEMENT_STATE_INACTIVE);
     nra_copy_text(destination->measured_progress, sizeof(destination->measured_progress), source->measured_progress);
 }
 
@@ -150,6 +452,8 @@ static void nra_push_toast(NRA_Context* context, NRA_UIToastKind kind, const rc_
         nra_copy_text(toast->title, sizeof(toast->title), achievement->title);
         nra_copy_text(toast->description, sizeof(toast->description), achievement->description);
         nra_copy_text(toast->badge_key, sizeof(toast->badge_key), achievement->badge_name);
+        nra_copy_badge_url(toast->badge_url, sizeof(toast->badge_url), achievement,
+                           RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED);
         nra_copy_text(toast->measured_progress, sizeof(toast->measured_progress), achievement->measured_progress);
     } else if (leaderboard != NULL) {
         toast->related_id = leaderboard->id;
@@ -374,6 +678,8 @@ static void nra_server_call(const rc_api_request_t* request, rc_client_server_ca
     }
     prepared.callback = callback;
     prepared.callback_data = callback_data;
+    prepared.outbox_kind = nra_outbox_classify_request(prepared.url, prepared.post_data,
+                                                       prepared.content_type);
 
     pthread_mutex_lock(&context->mutex);
     if (context->destroying || context->destroyed) {
@@ -411,6 +717,44 @@ static void nra_server_call(const rc_api_request_t* request, rc_client_server_ca
     http_request.content_type = prepared.content_type;
     http_request.user_agent = prepared.user_agent;
     pthread_mutex_unlock(&context->mutex);
+
+    if (prepared.outbox_kind != NRA_OUTBOX_NONE && context->outbox_durable) {
+        const char* account;
+        size_t account_size;
+        uint32_t game_id;
+        uint32_t console_id;
+        uint64_t sequence = 0;
+        NRA_Request failed = {0};
+
+        if (!nra_outbox_current_game(context, &game_id, &console_id) ||
+            !nra_outbox_form_value(prepared.post_data, "u", &account, &account_size) ||
+            !nra_outbox_append_request(context, &prepared, game_id, console_id,
+                                       account, account_size, &sequence)) {
+            pthread_mutex_lock(&context->mutex);
+            for (i = 0; i < NRA_MAX_IN_FLIGHT_REQUESTS; ++i) {
+                if (context->requests[i].used && context->requests[i].id == id) {
+                    failed = context->requests[i];
+                    memset(&context->requests[i], 0, sizeof(context->requests[i]));
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&context->mutex);
+            nra_free_request(&failed);
+            {
+                rc_api_server_response_t response = {NULL, 0, RC_API_SERVER_RESPONSE_RETRYABLE_CLIENT_ERROR};
+                callback(&response, callback_data);
+            }
+            return;
+        }
+        pthread_mutex_lock(&context->mutex);
+        for (i = 0; i < NRA_MAX_IN_FLIGHT_REQUESTS; ++i) {
+            if (context->requests[i].used && context->requests[i].id == id) {
+                context->requests[i].outbox_sequence = sequence;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&context->mutex);
+    }
 
     http_request.connect_timeout_ms = 10000;
     http_request.read_timeout_ms = 30000;
@@ -518,6 +862,198 @@ static void nra_cancel_requests(NRA_Context* context) {
     }
 }
 
+static bool nra_outbox_dispatch_replay(NRA_Context* context,
+                                       const NRA_OutboxJournalRecord* record) {
+    NRA_Request prepared = {0};
+    NRA_HttpRequest http_request;
+    NRA_RequestId id;
+    char* post_data;
+    size_t i;
+
+    if (context->platform.http_begin == NULL || record == NULL) {
+        return false;
+    }
+    prepared.url = nra_memdup_text(record->url, record->url_size);
+    prepared.post_data = nra_memdup_text(record->post, record->post_size);
+    prepared.content_type = nra_memdup_text(record->content_type, record->content_type_size);
+    prepared.user_agent = nra_strdup(context->user_agent);
+    if (prepared.url == NULL || prepared.post_data == NULL || prepared.content_type == NULL ||
+        prepared.user_agent == NULL) {
+        nra_free_request(&prepared);
+        return false;
+    }
+    prepared.outbox_kind = record->kind;
+    prepared.outbox_sequence = record->sequence;
+    prepared.outbox_replay = true;
+    prepared.used = true;
+
+    pthread_mutex_lock(&context->mutex);
+    if (context->destroying || context->destroyed) {
+        pthread_mutex_unlock(&context->mutex);
+        nra_free_request(&prepared);
+        return false;
+    }
+    for (i = 0; i < NRA_MAX_IN_FLIGHT_REQUESTS; ++i) {
+        if (!context->requests[i].used) {
+            break;
+        }
+    }
+    if (i == NRA_MAX_IN_FLIGHT_REQUESTS) {
+        pthread_mutex_unlock(&context->mutex);
+        nra_free_request(&prepared);
+        return false;
+    }
+    prepared.id = ++context->next_request_id;
+    if (prepared.id == 0) {
+        prepared.id = ++context->next_request_id;
+    }
+    context->requests[i] = prepared;
+    id = prepared.id;
+    http_request.url = prepared.url;
+    http_request.post_data = prepared.post_data;
+    http_request.content_type = prepared.content_type;
+    http_request.user_agent = prepared.user_agent;
+    pthread_mutex_unlock(&context->mutex);
+
+    http_request.connect_timeout_ms = 10000;
+    http_request.read_timeout_ms = 30000;
+    http_request.max_response_bytes = NRA_MAX_RESPONSE_BYTES;
+    context->platform.http_begin(context->platform_userdata, id, &http_request);
+
+    pthread_mutex_lock(&context->mutex);
+    post_data = NULL;
+    for (i = 0; i < NRA_MAX_IN_FLIGHT_REQUESTS; ++i) {
+        if (context->requests[i].used && context->requests[i].id == id) {
+            post_data = context->requests[i].post_data;
+            context->requests[i].post_data = NULL;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&context->mutex);
+    if (post_data != NULL) {
+        memset(post_data, 0, strlen(post_data));
+        free(post_data);
+    }
+    return true;
+}
+
+static void nra_outbox_replay(NRA_Context* context) {
+    const rc_client_user_t* user;
+    uint32_t game_id;
+    uint32_t console_id;
+    NRA_OutboxJournalRecord* records = NULL;
+    size_t record_count = 0;
+    size_t i;
+
+    if (!context->outbox_loaded && !nra_outbox_load(context)) {
+        return;
+    }
+    if (!context->outbox_durable || !context->outbox_loaded ||
+        context->outbox_persistence_failed || context->outbox_replay_in_flight ||
+        !context->logged_in || context->outbox_size == 0 ||
+        !nra_outbox_current_game(context, &game_id, &console_id)) {
+        return;
+    }
+    user = rc_client_get_user_info(context->client);
+    if (user == NULL || user->username == NULL || user->username[0] == '\0') {
+        return;
+    }
+    if (nra_outbox_journal_validate(context->outbox_blob, context->outbox_size, &record_count) !=
+        NRA_OUTBOX_JOURNAL_OK) {
+        context->outbox_persistence_failed = true;
+        return;
+    }
+    records = calloc(record_count, sizeof(*records));
+    if (records == NULL ||
+        nra_outbox_journal_decode(context->outbox_blob, context->outbox_size, records,
+                                  record_count, &record_count) != NRA_OUTBOX_JOURNAL_OK) {
+        free(records);
+        context->outbox_persistence_failed = true;
+        return;
+    }
+    for (i = 0; i < record_count; ++i) {
+        size_t account_size = strlen(user->username);
+
+        if (records[i].status == NRA_OUTBOX_JOURNAL_CONFIRMED) {
+            continue;
+        }
+        if (records[i].account_size != account_size ||
+            memcmp(records[i].account, user->username, account_size) != 0 ||
+            records[i].game_id != game_id || records[i].console_id != console_id) {
+            continue;
+        }
+        pthread_mutex_lock(&context->mutex);
+        context->outbox_replay_in_flight = true;
+        pthread_mutex_unlock(&context->mutex);
+        if (!nra_outbox_dispatch_replay(context, &records[i])) {
+            pthread_mutex_lock(&context->mutex);
+            context->outbox_replay_in_flight = false;
+            pthread_mutex_unlock(&context->mutex);
+            break;
+        }
+        break;
+    }
+    free(records);
+}
+
+static bool nra_outbox_confirm_completion(NRA_Context* context, const NRA_Request* request,
+                                          const NRA_Completion* completion) {
+    uint8_t* candidate;
+    size_t candidate_size;
+    size_t removed_size;
+
+    if (!context->outbox_durable || request == NULL || completion == NULL ||
+        request->outbox_sequence == 0 || completion->retryable ||
+        completion->http_status_code != 200 ||
+        !nra_outbox_response_confirmed(request->outbox_kind,
+                                       (const char*)completion->body, completion->body_size) ||
+        context->outbox_size == 0 || context->outbox_persistence_failed) {
+        return false;
+    }
+    candidate = malloc(NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    if (candidate == NULL) {
+        return false;
+    }
+    memcpy(candidate, context->outbox_blob, context->outbox_size);
+    candidate_size = context->outbox_size;
+    if (nra_outbox_journal_mark_confirmed(candidate, candidate_size, request->outbox_sequence) !=
+            NRA_OUTBOX_JOURNAL_OK ||
+        nra_outbox_journal_remove_confirmed(candidate, candidate_size, request->outbox_sequence,
+                                             &removed_size) != NRA_OUTBOX_JOURNAL_OK ||
+        !nra_outbox_store_candidate(context, candidate, removed_size)) {
+        memset(candidate, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+        free(candidate);
+        return false;
+    }
+    if (removed_size == NRA_OUTBOX_JOURNAL_HEADER_SIZE) {
+        memset(context->outbox_blob, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+        context->outbox_size = 0;
+    } else {
+        memcpy(context->outbox_blob, candidate, removed_size);
+        if (removed_size < context->outbox_size) {
+            memset(context->outbox_blob + removed_size, 0, context->outbox_size - removed_size);
+        }
+        context->outbox_size = removed_size;
+    }
+    memset(candidate, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    free(candidate);
+    return true;
+}
+
+static bool nra_outbox_clear(NRA_Context* context) {
+    if (!context->outbox_durable) {
+        return true;
+    }
+    if (!nra_outbox_store_candidate(context, NULL, 0)) {
+        return false;
+    }
+    memset(context->outbox_blob, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    context->outbox_size = 0;
+    context->next_outbox_sequence = 1;
+    context->outbox_replay_in_flight = false;
+    return true;
+}
+
 static void nra_drain_completions(NRA_Context* context, bool allow_memory_requests) {
     for (;;) {
         NRA_Completion completion;
@@ -554,6 +1090,17 @@ static void nra_drain_completions(NRA_Context* context, bool allow_memory_reques
             }
         }
         pthread_mutex_unlock(&context->mutex);
+        {
+            const bool replay_confirmed = nra_outbox_confirm_completion(context, &request, &completion);
+            if (request.outbox_replay) {
+                pthread_mutex_lock(&context->mutex);
+                context->outbox_replay_in_flight = false;
+                pthread_mutex_unlock(&context->mutex);
+            }
+            if (replay_confirmed) {
+                nra_outbox_replay(context);
+            }
+        }
         if (request.callback != NULL) {
             rc_api_server_response_t response;
             response.body = (const char*)completion.body;
@@ -594,13 +1141,19 @@ static void nra_login_callback(int result, const char* error_message, rc_client_
     context->ui.account_score = user != NULL ? user->score : 0;
     nra_copy_text(context->ui.account_name, sizeof(context->ui.account_name),
                   user != NULL ? user->display_name : NULL);
-    if (logged_in) context->ui.connection = NRA_UI_CONNECTION_ONLINE;
+    context->ui.connection = logged_in ? NRA_UI_CONNECTION_ONLINE : NRA_UI_CONNECTION_OFFLINE;
     nra_ui_changed(context);
     pthread_mutex_unlock(&context->mutex);
+    if (!logged_in) {
+        nra_unload_game(context);
+    }
     if (!persist_credentials) {
         if (result != RC_OK && result != RC_ABORTED && context->platform.secret_delete != NULL) {
             (void)context->platform.secret_delete(context->platform_userdata, "native_ra.username");
             (void)context->platform.secret_delete(context->platform_userdata, "native_ra.token");
+        }
+        if (logged_in) {
+            nra_outbox_replay(context);
         }
         return;
     }
@@ -629,6 +1182,9 @@ static void nra_login_callback(int result, const char* error_message, rc_client_
             nra_ui_changed(context);
         }
         pthread_mutex_unlock(&context->mutex);
+    }
+    if (logged_in) {
+        nra_outbox_replay(context);
     }
 }
 
@@ -682,6 +1238,9 @@ static void nra_load_callback(int result, const char* error_message, rc_client_t
     if (game_loaded && game != NULL && context->game.on_ra_game_loaded != NULL) {
         context->game.on_ra_game_loaded(context->game_userdata, game->id);
     }
+    if (game_loaded && game != NULL) {
+        nra_outbox_replay(context);
+    }
 }
 
 NRA_Result nra_create(const NRA_CreateParams* params, NRA_Context** context) {
@@ -730,6 +1289,14 @@ NRA_Result nra_create(const NRA_CreateParams* params, NRA_Context** context) {
         free(result);
         return NRA_INTERNAL_ERROR;
     }
+    if (!nra_outbox_load(result)) {
+        pthread_mutex_destroy(&result->mutex);
+        rc_client_destroy(result->client);
+        free(result->outbox_blob);
+        free(result->user_agent);
+        free(result);
+        return NRA_INTERNAL_ERROR;
+    }
     rc_client_set_userdata(result->client, result);
     rc_client_set_event_handler(result->client, nra_event_handler);
     rc_client_enable_logging(result->client, RC_CLIENT_LOG_LEVEL_INFO, nra_client_log);
@@ -767,6 +1334,10 @@ void nra_destroy(NRA_Context* context) {
     context->destroying = false;
     context->client = NULL;
     pthread_mutex_unlock(&context->mutex);
+    if (context->outbox_blob != NULL) {
+        memset(context->outbox_blob, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+        free(context->outbox_blob);
+    }
     free(context->user_agent);
     pthread_mutex_destroy(&context->mutex);
     free(context);
@@ -817,10 +1388,10 @@ NRA_Result nra_login_token(NRA_Context* context, const char* username, const cha
 
 void nra_logout(NRA_Context* context, bool delete_persisted_credentials) {
     if (nra_valid_context(context)) {
-        bool game_was_loaded;
+        bool game_was_loaded = rc_client_get_game_info(context->client) != NULL;
 
         pthread_mutex_lock(&context->mutex);
-        game_was_loaded = context->game_loaded || context->load_pending;
+        game_was_loaded = game_was_loaded || context->game_loaded || context->load_pending;
         context->logged_in = false;
         context->login_pending = false;
         context->game_loaded = false;
@@ -832,6 +1403,7 @@ void nra_logout(NRA_Context* context, bool delete_persisted_credentials) {
         context->ui.mode = context->mode;
         context->ui.connection = NRA_UI_CONNECTION_UNKNOWN;
         pthread_mutex_unlock(&context->mutex);
+        rc_client_unload_game(context->client);
         rc_client_logout(context->client);
         nra_cancel_requests(context);
         if (game_was_loaded && context->game.on_ra_game_unloaded != NULL) {
@@ -842,6 +1414,7 @@ void nra_logout(NRA_Context* context, bool delete_persisted_credentials) {
                 (void)context->platform.secret_delete(context->platform_userdata, "native_ra.username");
                 (void)context->platform.secret_delete(context->platform_userdata, "native_ra.token");
             }
+            (void)nra_outbox_clear(context);
         }
     }
 }
@@ -884,22 +1457,23 @@ NRA_Result nra_load_current_game(NRA_Context* context) {
 }
 
 void nra_unload_game(NRA_Context* context) {
+    bool game_was_loaded;
+
     if (!nra_valid_context(context)) {
         return;
     }
+    game_was_loaded = rc_client_get_game_info(context->client) != NULL;
     pthread_mutex_lock(&context->mutex);
-    if (!context->game_loaded && !context->load_pending) {
-        pthread_mutex_unlock(&context->mutex);
-        return;
-    }
+    game_was_loaded = game_was_loaded || context->game_loaded || context->load_pending;
     context->game_loaded = false;
     context->load_pending = false;
     context->achievement_list_dirty = false;
+    context->outbox_replay_in_flight = false;
     nra_clear_game_ui(context);
     pthread_mutex_unlock(&context->mutex);
     rc_client_unload_game(context->client);
     nra_cancel_requests(context);
-    if (context->game.on_ra_game_unloaded != NULL) {
+    if (game_was_loaded && context->game.on_ra_game_unloaded != NULL) {
         context->game.on_ra_game_unloaded(context->game_userdata);
     }
 }
@@ -975,6 +1549,8 @@ void nra_notify_reset_completed(NRA_Context* context) {
 
 NRA_Result nra_request_mode(NRA_Context* context, NRA_Mode mode) {
     NRA_CapabilityPolicy policy = {0};
+    bool game_loaded;
+    bool load_pending;
 
     if (!nra_valid_context(context) || mode < NRA_MODE_SPECTATOR || mode > NRA_MODE_HARDCORE_APPROVED) {
         return NRA_INVALID_ARGUMENT;
@@ -986,10 +1562,19 @@ NRA_Result nra_request_mode(NRA_Context* context, NRA_Mode mode) {
         return NRA_DISABLED;
     }
     pthread_mutex_lock(&context->mutex);
-    if (context->game_loaded && ((context->mode == NRA_MODE_SPECTATOR) != (mode == NRA_MODE_SPECTATOR))) {
+    game_loaded = context->game_loaded;
+    load_pending = context->load_pending;
+    if ((game_loaded || load_pending) &&
+        ((context->mode == NRA_MODE_SPECTATOR) != (mode == NRA_MODE_SPECTATOR))) {
         pthread_mutex_unlock(&context->mutex);
         return NRA_INVALID_STATE;
     }
+    pthread_mutex_unlock(&context->mutex);
+    if (context->game.admit_mode != NULL &&
+        !context->game.admit_mode(context->game_userdata, mode, game_loaded)) {
+        return NRA_MEMORY_UNVERIFIED;
+    }
+    pthread_mutex_lock(&context->mutex);
     context->mode = mode;
     context->ui.mode = mode;
     nra_ui_changed(context);

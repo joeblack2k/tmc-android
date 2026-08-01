@@ -30,6 +30,7 @@ typedef struct NRA_GameAdapterVTable {
     bool (*read_memory_snapshot)(void* userdata, uint32_t address, uint8_t* buffer, uint32_t count);
     void (*release_memory_snapshot)(void* userdata, const NRA_MemoryView* memory);
     void (*request_full_reset)(void* userdata, uint32_t reason);
+    bool (*admit_mode)(void* userdata, NRA_Mode requested_mode, bool game_loaded);
     void (*apply_capability_policy)(void* userdata, const NRA_CapabilityPolicy* policy);
     bool (*is_game_tick_processable)(void* userdata);
     bool (*accept_identified_game)(void* userdata, uint32_t game_id, uint32_t console_id);

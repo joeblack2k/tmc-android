@@ -14,6 +14,7 @@ typedef struct TmcRaAdapter {
     uint32_t identified_game_id;
     bool reset_requested;
     bool strict_mode;
+    bool memory_fully_validated;
 } TmcRaAdapter;
 
 void TmcRaAdapter_Init(TmcRaAdapter* adapter);
@@ -21,5 +22,6 @@ const NRA_GameAdapterVTable* TmcRaAdapter_VTable(void);
 TmcRaAdmission TmcRaAdapter_Admission(const TmcRaAdapter* adapter);
 bool TmcRaAdapter_TakeResetRequest(TmcRaAdapter* adapter);
 bool TmcRaAdapter_StrictMode(const TmcRaAdapter* adapter);
+bool TmcRaAdapter_MemoryFullyValidated(const TmcRaAdapter* adapter);
 
 #endif

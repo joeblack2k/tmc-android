@@ -41,8 +41,16 @@ int main(void) {
     CHECK_ADAPTER(vtable->build_memory_snapshot(&adapter, &memory) == NRA_OK);
     CHECK_ADAPTER(memory.data == TmcRaMemory_Current().bytes && memory.size == TMC_RA_SNAPSHOT_BYTES);
     CHECK_ADAPTER(!memory.fully_validated);
-    CHECK_ADAPTER(memory.generation == generation + 1);
+    /* The owner-thread runtime publishes once before entering the native
+     * core; adapter snapshot construction is a value-only view boundary. */
+    CHECK_ADAPTER(memory.generation == generation);
     CHECK_ADAPTER(TmcRaMemory_Current().generation == memory.generation);
+    CHECK_ADAPTER(vtable->admit_mode != NULL);
+    CHECK_ADAPTER(!vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, false));
+    CHECK_ADAPTER(vtable->admit_mode(&adapter, NRA_MODE_SPECTATOR, false));
+    adapter.memory_fully_validated = true;
+    CHECK_ADAPTER(vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, true));
+    CHECK_ADAPTER(!vtable->admit_mode(&adapter, NRA_MODE_LIVE_CASUAL, false));
 
     TmcRaMemory_OverlayExplicit(0x0010, (const uint8_t[]){ 0x9a, 0xbc }, 2);
     TmcRaMemory_ResetAudit();
@@ -50,16 +58,18 @@ int main(void) {
     CHECK_ADAPTER(bytes[0] == 0x9a && bytes[1] == 0xbc);
     CHECK_ADAPTER(!vtable->read_memory_snapshot(&adapter, 0x00fdc, bytes, 1));
     CHECK_ADAPTER(!vtable->read_memory_snapshot(&adapter, 0x00ff7, bytes, 1));
+    CHECK_ADAPTER(!vtable->read_memory_snapshot(&adapter, 0x01000, bytes, 1));
     CHECK_ADAPTER(!vtable->read_memory_snapshot(&adapter, 0x0100c, bytes, 1));
     CHECK_ADAPTER(!vtable->read_memory_snapshot(&adapter, 0x00fdb, bytes, 2));
     CHECK_ADAPTER(!vtable->read_memory_snapshot(&adapter, TMC_RA_SNAPSHOT_BYTES, bytes, 1));
     audit = TmcRaMemory_ReadAudit();
-    CHECK_ADAPTER(audit.requested_ranges == 6 && audit.requested_bytes == 8);
-    CHECK_ADAPTER(audit.invalid_requested_ranges == 5 && audit.invalid_requested_bytes == 5);
+    CHECK_ADAPTER(audit.requested_ranges == 7 && audit.requested_bytes == 9);
+    CHECK_ADAPTER(audit.invalid_requested_ranges == 6 && audit.invalid_requested_bytes == 6);
     coverage = TmcRaMemory_RequestedCoverage();
-    CHECK_ADAPTER(coverage.selected_bytes == 6 && coverage.out_of_range_bytes == 1);
+    CHECK_ADAPTER(coverage.selected_bytes == 7 && coverage.out_of_range_bytes == 1);
     CHECK_ADAPTER(coverage.bitmap[0x0010] && coverage.bitmap[0x0011] &&
                   coverage.bitmap[0x00fdc] && coverage.bitmap[0x00fdb] &&
+                  coverage.bitmap[0x01000] &&
                   coverage.bitmap[0x00ff7] && coverage.bitmap[0x0100c]);
     TmcRaAdapter_Init(&adapter);
     coverage = TmcRaMemory_RequestedCoverage();

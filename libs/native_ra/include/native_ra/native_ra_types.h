@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NRA_ABI_VERSION 2u
+#define NRA_ABI_VERSION 4u
 
 typedef enum NRA_Result {
     NRA_OK = 0,
@@ -45,6 +45,7 @@ typedef struct NRA_StatusSnapshot {
 #define NRA_UI_RICH_PRESENCE_MAX 256u
 #define NRA_UI_TEXT_MAX 128u
 #define NRA_UI_BADGE_KEY_MAX 16u
+#define NRA_UI_IMAGE_URL_MAX 256u
 #define NRA_UI_MEASURED_PROGRESS_MAX 32u
 #define NRA_UI_ACHIEVEMENT_MAX 128u
 #define NRA_UI_TOAST_MAX 8u
@@ -75,6 +76,7 @@ typedef struct NRA_UIAchievement {
     char title[NRA_UI_TEXT_MAX];
     char description[NRA_UI_TEXT_MAX];
     char badge_key[NRA_UI_BADGE_KEY_MAX];
+    char badge_url[NRA_UI_IMAGE_URL_MAX];
     char measured_progress[NRA_UI_MEASURED_PROGRESS_MAX];
 } NRA_UIAchievement;
 
@@ -86,6 +88,7 @@ typedef struct NRA_UIToast {
     char title[NRA_UI_TEXT_MAX];
     char description[NRA_UI_TEXT_MAX];
     char badge_key[NRA_UI_BADGE_KEY_MAX];
+    char badge_url[NRA_UI_IMAGE_URL_MAX];
     char measured_progress[NRA_UI_MEASURED_PROGRESS_MAX];
 } NRA_UIToast;
 

@@ -348,7 +348,8 @@ int main(void) {
     CHECK(TmcRaMemory_Current().bytes[0x8000] == 0x22);
     CHECK(TmcRaMemory_Current().bytes[0x1000] == 0xa1 && TmcRaMemory_Current().bytes[0x100c] == 0x34);
     CHECK(TmcRaMemory_Current().bytes[0x100d] == 0x12);
-    CHECK(TmcRaMemory_Current().validated[0x100b] && !TmcRaMemory_Current().validated[0x100c] &&
+    CHECK(!TmcRaMemory_Current().validated[0x1000] && TmcRaMemory_Current().validated[0x100b] &&
+          !TmcRaMemory_Current().validated[0x100c] &&
           TmcRaMemory_Current().validated[0x100d]);
     CHECK(TmcRaMemory_Current().bytes[0x0ff0] == 0x78 && TmcRaMemory_Current().bytes[0x0ff7] == 0x9a);
     CHECK(TmcRaMemory_Current().validated[0x0ff6] && !TmcRaMemory_Current().validated[0x0ff7] &&

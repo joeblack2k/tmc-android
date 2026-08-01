@@ -19,8 +19,10 @@
 #include "port_second_screen_state.h"
 #ifdef TMC_ENABLE_RETROACHIEVEMENTS
 #include "ra/tmc_ra_runtime.h"
+#include "port_repro.h"
 #endif
 #include <setjmp.h>
+#include <stdlib.h>
 #endif
 #include "gba/io_reg.h"
 
@@ -35,6 +37,9 @@ extern void n64_post(int);
 #endif
 
 extern u32 gRand;
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+static uint32_t sRaCaptureFrame;
+#endif
 
 static void InitOverlays(void);
 static bool32 SoftResetKeysPressed(void);
@@ -131,6 +136,11 @@ void AgbMain(void) {
                 }
 
                 gMain.ticks++;
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+                if (sRaCaptureFrame == UINT32_MAX)
+                    exit(1);
+                sRaCaptureFrame++;
+#endif
                 sTaskHandlers[gMain.task]();
 #ifdef TMC_N64
                 {
@@ -148,8 +158,12 @@ void AgbMain(void) {
 
                 AudioMain();
 #ifdef TMC_ENABLE_RETROACHIEVEMENTS
-                if (TmcRaRuntime_Frame(&gTmcRaRuntime))
-                    DoSoftReset();
+                {
+                    const bool ra_reset = TmcRaRuntime_Frame(&gTmcRaRuntime);
+                    Port_ReproRaCapture_Tick(sRaCaptureFrame, TmcRaRuntime_FrameView(&gTmcRaRuntime));
+                    if (ra_reset)
+                        DoSoftReset();
+                }
 #endif
                 break;
         }

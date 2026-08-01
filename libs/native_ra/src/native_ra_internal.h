@@ -4,6 +4,7 @@
 #include "native_ra/native_ra.h"
 
 #include "rc_client.h"
+#include "native_ra_outbox.h"
 
 #include <pthread.h>
 
@@ -19,6 +20,9 @@ typedef struct NRA_Request {
     char* post_data;
     char* content_type;
     char* user_agent;
+    NRA_OutboxKind outbox_kind;
+    uint64_t outbox_sequence;
+    bool outbox_replay;
     bool requires_memory;
     bool used;
 } NRA_Request;
@@ -58,6 +62,13 @@ struct NRA_Context {
     bool destroyed;
     bool has_memory;
     NRA_MemoryView memory;
+    uint8_t* outbox_blob;
+    size_t outbox_size;
+    uint64_t next_outbox_sequence;
+    bool outbox_durable;
+    bool outbox_loaded;
+    bool outbox_persistence_failed;
+    bool outbox_replay_in_flight;
     NRA_RequestId next_request_id;
     NRA_Request requests[NRA_MAX_IN_FLIGHT_REQUESTS];
     NRA_Completion completions[NRA_MAX_COMPLETIONS];

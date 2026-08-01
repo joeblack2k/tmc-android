@@ -1,5 +1,6 @@
 #include "native_ra/native_ra.h"
 #include "native_ra_internal.h"
+#include "../src/native_ra_outbox_journal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,13 +19,17 @@ typedef struct Mock {
     uint8_t memory[32];
     size_t rom_size;
     int begins, cancels, shutdowns, stores, store_attempts, store_fail_attempt, deletes;
+    uint8_t* secure_blob;
+    size_t secure_size;
+    int secure_gets, secure_sets, secure_deletes;
     char stored_keys[2][32];
     uint8_t stored_values[2][16];
     size_t stored_sizes[2];
     NRA_Result inline_result;
     uint64_t now_ms;
     int builds, releases, loads, unloads, resets, snapshot_reads;
-    bool processable, validated, accept_game, validation_reader;
+    bool processable, validated, accept_game, validation_reader, allow_live_mode;
+    bool gate_saw_game_loaded;
     bool inline_completion;
 } Mock;
 
@@ -38,6 +43,7 @@ static const char patch[] = "{\"Success\":true,\"GameId\":1234,\"Title\":\"Synth
     "\"MemAddr\":\"0xH0001=2_0x0002=9\",\"Author\":\"test\",\"BadgeName\":\"00235\",\"Created\":1376970283,\"Modified\":1376970283}],"
     "\"Leaderboards\":[]}]}";
 static const char session_ok[] = "{\"Success\":true,\"Unlocks\":[],\"HardcoreUnlocks\":[]}";
+static const char award_ok[] = "{\"Success\":true,\"Score\":1,\"SoftcoreScore\":1,\"AchievementID\":5501,\"AchievementsRemaining\":0}";
 
 /* Pinned rcheevos test/rhash/data.c generate_generic_file pattern, generated at runtime. */
 static uint8_t* generate_generic_file(size_t size) {
@@ -92,6 +98,93 @@ static NRA_Result store(void* userdata, const char* key, const uint8_t* value, s
     return NRA_OK;
 }
 static NRA_Result erase(void* userdata, const char* key) { (void)key; ++((Mock*)userdata)->deletes; return NRA_OK; }
+static NRA_Result secure_get(void* userdata, const char* key, uint8_t* value, size_t capacity, size_t* size) {
+    Mock* mock = userdata;
+
+    if (key == NULL || strcmp(key, "native_ra.outbox") != 0 || size == NULL) return NRA_INVALID_ARGUMENT;
+    ++mock->secure_gets;
+    *size = mock->secure_size;
+    if (mock->secure_size != 0) {
+        if (value == NULL || capacity < mock->secure_size) {
+            *size = 0;
+            return NRA_INVALID_ARGUMENT;
+        }
+        memcpy(value, mock->secure_blob, mock->secure_size);
+    }
+    return NRA_OK;
+}
+static NRA_Result secure_set(void* userdata, const char* key, const uint8_t* value, size_t size) {
+    Mock* mock = userdata;
+    uint8_t* replacement;
+
+    if (key == NULL || strcmp(key, "native_ra.outbox") != 0 || value == NULL ||
+        size == 0 || size > NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES) return NRA_INVALID_ARGUMENT;
+    replacement = malloc(size);
+    if (replacement == NULL) return NRA_INTERNAL_ERROR;
+    memcpy(replacement, value, size);
+    if (mock->secure_blob != NULL) memset(mock->secure_blob, 0, mock->secure_size);
+    free(mock->secure_blob);
+    mock->secure_blob = replacement;
+    mock->secure_size = size;
+    ++mock->secure_sets;
+    return NRA_OK;
+}
+static NRA_Result secure_delete(void* userdata, const char* key) {
+    Mock* mock = userdata;
+
+    if (key == NULL || strcmp(key, "native_ra.outbox") != 0) return NRA_INVALID_ARGUMENT;
+    if (mock->secure_blob != NULL) memset(mock->secure_blob, 0, mock->secure_size);
+    free(mock->secure_blob);
+    mock->secure_blob = NULL;
+    mock->secure_size = 0;
+    ++mock->secure_deletes;
+    return NRA_OK;
+}
+static int seed_mixed_outbox(Mock* mock) {
+    static const uint8_t other_account[] = "other";
+    static const uint8_t user_account[] = "user";
+    static const uint8_t url[] = "https://retroachievements.org/dorequest.php";
+    static const uint8_t content_type[] = "application/x-www-form-urlencoded";
+    static const uint8_t other_post[] = "r=awardachievement&u=other&a=5501";
+    static const uint8_t user_post_one[] = "r=awardachievement&u=user&a=5501";
+    static const uint8_t user_post_two[] = "r=awardachievement&u=user&a=5502";
+    static const uint8_t other_key[NRA_OUTBOX_JOURNAL_DEDUPE_KEY_SIZE] = {1};
+    static const uint8_t user_key_one[NRA_OUTBOX_JOURNAL_DEDUPE_KEY_SIZE] = {2};
+    static const uint8_t user_key_two[NRA_OUTBOX_JOURNAL_DEDUPE_KEY_SIZE] = {3};
+    NRA_OutboxJournalRecord records[3] = {
+        {.sequence = 1, .game_id = 1234, .console_id = 5, .kind = NRA_OUTBOX_ACHIEVEMENT,
+            .status = NRA_OUTBOX_JOURNAL_PENDING, .account = other_account,
+            .account_size = sizeof(other_account) - 1, .dedupe_key = other_key,
+            .dedupe_key_size = sizeof(other_key), .url = url, .url_size = sizeof(url) - 1,
+            .content_type = content_type, .content_type_size = sizeof(content_type) - 1,
+            .post = other_post, .post_size = sizeof(other_post) - 1},
+        {.sequence = 2, .game_id = 1234, .console_id = 5, .kind = NRA_OUTBOX_ACHIEVEMENT,
+            .status = NRA_OUTBOX_JOURNAL_PENDING, .account = user_account,
+            .account_size = sizeof(user_account) - 1, .dedupe_key = user_key_one,
+            .dedupe_key_size = sizeof(user_key_one), .url = url, .url_size = sizeof(url) - 1,
+            .content_type = content_type, .content_type_size = sizeof(content_type) - 1,
+            .post = user_post_one, .post_size = sizeof(user_post_one) - 1},
+        {.sequence = 3, .game_id = 1234, .console_id = 5, .kind = NRA_OUTBOX_ACHIEVEMENT,
+            .status = NRA_OUTBOX_JOURNAL_PENDING, .account = user_account,
+            .account_size = sizeof(user_account) - 1, .dedupe_key = user_key_two,
+            .dedupe_key_size = sizeof(user_key_two), .url = url, .url_size = sizeof(url) - 1,
+            .content_type = content_type, .content_type_size = sizeof(content_type) - 1,
+            .post = user_post_two, .post_size = sizeof(user_post_two) - 1}
+    };
+    uint8_t* journal;
+    size_t journal_size = 0;
+    int result;
+
+    journal = malloc(NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    if (journal == NULL) return 0;
+    result = nra_outbox_journal_encode(journal, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES,
+                                       records, sizeof(records) / sizeof(records[0]), &journal_size);
+    if (result == NRA_OUTBOX_JOURNAL_OK)
+        result = secure_set(mock, "native_ra.outbox", journal, journal_size);
+    memset(journal, 0, NRA_OUTBOX_JOURNAL_MAX_TOTAL_BYTES);
+    free(journal);
+    return result == NRA_OK;
+}
 static NRA_Result rom(void* userdata, NRA_RomView* view) {
     Mock* mock = userdata;
     view->path_hint = "synthetic.gba";
@@ -125,6 +218,13 @@ static bool accept_game(void* userdata, uint32_t id, uint32_t console_id) {
 static void loaded(void* userdata, uint32_t id) { if (id == 1234) ++((Mock*)userdata)->loads; }
 static void unloaded(void* userdata) { ++((Mock*)userdata)->unloads; }
 static void reset(void* userdata, uint32_t reason) { if (reason) ++((Mock*)userdata)->resets; }
+static bool admit_mode(void* userdata, NRA_Mode requested_mode, bool game_loaded) {
+    Mock* mock = userdata;
+
+    mock->gate_saw_game_loaded = game_loaded;
+    return !game_loaded && (requested_mode == NRA_MODE_SPECTATOR ||
+        (requested_mode == NRA_MODE_LIVE_CASUAL && mock->allow_live_mode));
+}
 static NRA_Result complete(Mock* mock, NRA_RequestId id, const char* body, int status, bool retryable) {
     NRA_HttpCompletion completion = {.request_id = id, .http_status_code = status, .body = (const uint8_t*)body,
         .body_size = body ? strlen(body) : 0, .retryable = retryable};
@@ -285,6 +385,65 @@ static int rejected_stored_token_clears_credentials(const NRA_CreateParams* para
     return mock.shutdowns == 1;
 fail:
     if (mock.context != NULL) nra_destroy(mock.context);
+    return 0;
+}
+
+static int token_failure_unloads_game(const NRA_CreateParams* params) {
+    Mock mock = {.processable = true, .validated = true, .accept_game = true};
+    NRA_CreateParams local_params = *params;
+    NRA_StatusSnapshot status;
+
+    local_params.platform_userdata = &mock;
+    local_params.game_userdata = &mock;
+    mock.rom = generate_generic_file(FIXTURE_BYTES);
+    mock.rom_size = FIXTURE_BYTES;
+    if (mock.rom == NULL ||
+        nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
+        !route(&mock, "r=login2", login_ok)) goto fail;
+    drain(&mock);
+    if (!load(&mock, false) ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.logged_in ||
+        !status.game_loaded || status.load_pending ||
+        rc_client_get_game_info(mock.context->client) == NULL) goto fail;
+    if (nra_login_token(mock.context, "user", "token") != NRA_PENDING ||
+        !route(&mock, "r=login2", "{}")) goto fail;
+    drain(&mock);
+    if (!nra_copy_status_snapshot(mock.context, &status) || status.logged_in ||
+        status.game_loaded || status.load_pending || status.request_pending ||
+        rc_client_get_game_info(mock.context->client) != NULL || mock.unloads != 1) goto fail;
+    if (nra_login_token(mock.context, "user", "token") != NRA_PENDING ||
+        !route(&mock, "r=login2", login_ok)) goto fail;
+    drain(&mock);
+    if (!nra_copy_status_snapshot(mock.context, &status) || !status.logged_in ||
+        status.game_loaded || status.load_pending || status.request_pending ||
+        !load(&mock, false) ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.game_loaded ||
+        !status.logged_in || status.load_pending || mock.loads != 2) goto fail;
+    if (nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
+        !route(&mock, "r=login2", "{}")) goto fail;
+    drain(&mock);
+    if (!nra_copy_status_snapshot(mock.context, &status) || status.logged_in ||
+        status.game_loaded || status.load_pending || status.request_pending ||
+        rc_client_get_game_info(mock.context->client) != NULL || mock.unloads != 2) goto fail;
+    if (nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
+        !route(&mock, "r=login2", login_ok)) goto fail;
+    drain(&mock);
+    if (!nra_copy_status_snapshot(mock.context, &status) || !status.logged_in ||
+        status.game_loaded || status.load_pending || status.request_pending ||
+        !load(&mock, false) ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.game_loaded ||
+        !status.logged_in || status.load_pending || mock.loads != 3) goto fail;
+    nra_logout(mock.context, false);
+    if (!nra_copy_status_snapshot(mock.context, &status) || status.logged_in ||
+        status.game_loaded || status.load_pending ||
+        rc_client_get_game_info(mock.context->client) != NULL || mock.unloads != 3) goto fail;
+    nra_destroy(mock.context);
+    free(mock.rom);
+    return 1;
+fail:
+    if (mock.context != NULL) nra_destroy(mock.context);
+    free(mock.rom);
     return 0;
 }
 
@@ -545,6 +704,207 @@ static int ui_snapshot_events(NRA_Context* context) {
     return reader.copies > 0;
 }
 
+static int durable_outbox_flow(const NRA_CreateParams* params) {
+    Mock mock = {.processable = true, .validated = true, .accept_game = true};
+    NRA_PlatformVTable platform = *params->platform;
+    NRA_CreateParams local_params = *params;
+    size_t record_count = 0;
+    int begins_before;
+
+    platform.secure_blob_get = secure_get;
+    platform.secure_blob_set = secure_set;
+    platform.secure_blob_delete = secure_delete;
+    mock.rom = generate_generic_file(FIXTURE_BYTES);
+    mock.rom_size = FIXTURE_BYTES;
+    local_params.platform = &platform;
+    local_params.platform_userdata = &mock;
+    local_params.game_userdata = &mock;
+    if (nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_OK ||
+        nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
+        !route(&mock, "r=login2", login_ok)) goto fail;
+    drain(&mock);
+    if (!load(&mock, true)) goto fail;
+    nra_notify_reset_completed(mock.context);
+    nra_do_frame(mock.context);
+    mock.memory[1] = 3;
+    mock.memory[2] = 7;
+    begins_before = mock.begins;
+    for (int frame = 0; frame < 4 && mock.begins == begins_before; ++frame) {
+        nra_do_frame(mock.context);
+        nra_idle(mock.context);
+    }
+    if (mock.begins != begins_before + 1 ||
+        !strstr(mock.posts[mock.begins - 1], "r=awardachievement") ||
+        mock.secure_size == 0 || mock.secure_sets == 0 ||
+        nra_outbox_journal_validate(mock.secure_blob, mock.secure_size, &record_count) !=
+            NRA_OUTBOX_JOURNAL_OK ||
+        record_count != 1) goto fail;
+    if (complete(&mock, mock.ids[mock.begins - 1], award_ok, 200, false) != NRA_OK) goto fail;
+    drain(&mock);
+    if (mock.secure_size != 0 || mock.secure_deletes == 0) goto fail;
+    /* Let rcheevos raise completion events before the game is unloaded. */
+    nra_do_frame(mock.context);
+    nra_unload_game(mock.context);
+    nra_destroy(mock.context);
+    free(mock.rom);
+    return 1;
+fail:
+    if (mock.context != NULL) {
+        nra_unload_game(mock.context);
+        nra_destroy(mock.context);
+    }
+    if (mock.secure_blob != NULL) {
+        memset(mock.secure_blob, 0, mock.secure_size);
+        free(mock.secure_blob);
+    }
+    free(mock.rom);
+    return 0;
+}
+
+static int mode_admission_gate(const NRA_CreateParams* params) {
+    Mock mock = {0};
+    NRA_GameAdapterVTable game = *params->game;
+    NRA_CreateParams local_params = *params;
+    NRA_UISnapshot ui;
+
+    game.admit_mode = admit_mode;
+    local_params.game = &game;
+    local_params.platform_userdata = &mock;
+    local_params.game_userdata = &mock;
+    if (nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_MEMORY_UNVERIFIED ||
+        mock.gate_saw_game_loaded ||
+        nra_request_mode(mock.context, NRA_MODE_SPECTATOR) != NRA_OK ||
+        !nra_copy_ui_snapshot(mock.context, &ui) || ui.mode != NRA_MODE_SPECTATOR) {
+        if (mock.context != NULL) nra_destroy(mock.context);
+        return 0;
+    }
+    nra_destroy(mock.context);
+    return 1;
+}
+
+static int locked_mode_transition(const NRA_CreateParams* params) {
+    Mock mock = {.processable = true, .validated = true, .accept_game = true, .allow_live_mode = true};
+    NRA_GameAdapterVTable game = *params->game;
+    NRA_CreateParams local_params = *params;
+    NRA_StatusSnapshot status;
+
+    game.admit_mode = admit_mode;
+    local_params.game = &game;
+    local_params.platform_userdata = &mock;
+    local_params.game_userdata = &mock;
+    mock.rom = generate_generic_file(FIXTURE_BYTES);
+    mock.rom_size = FIXTURE_BYTES;
+    if (mock.rom == NULL ||
+        nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
+        !route(&mock, "r=login2", login_ok)) goto fail;
+    drain(&mock);
+    if (nra_load_current_game(mock.context) != NRA_PENDING ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.load_pending ||
+        status.mode != NRA_MODE_SPECTATOR || !rc_client_get_spectator_mode_enabled(mock.context->client) ||
+        nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_INVALID_STATE ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.load_pending ||
+        status.mode != NRA_MODE_SPECTATOR || !rc_client_get_spectator_mode_enabled(mock.context->client)) goto fail;
+    nra_unload_game(mock.context);
+    if (!load(&mock, false) ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.game_loaded ||
+        status.mode != NRA_MODE_SPECTATOR ||
+        !rc_client_get_spectator_mode_enabled(mock.context->client)) goto fail;
+    if (nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_INVALID_STATE ||
+        !rc_client_get_spectator_mode_enabled(mock.context->client) ||
+        !nra_copy_status_snapshot(mock.context, &status) ||
+        !status.game_loaded || status.mode != NRA_MODE_SPECTATOR) goto fail;
+    nra_unload_game(mock.context);
+    if (nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_OK ||
+        !nra_copy_status_snapshot(mock.context, &status) ||
+        status.game_loaded || status.mode != NRA_MODE_LIVE_CASUAL ||
+        nra_load_current_game(mock.context) != NRA_PENDING ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.load_pending ||
+        status.mode != NRA_MODE_LIVE_CASUAL || rc_client_get_spectator_mode_enabled(mock.context->client) ||
+        nra_request_mode(mock.context, NRA_MODE_SPECTATOR) != NRA_INVALID_STATE ||
+        !nra_copy_status_snapshot(mock.context, &status) || !status.load_pending ||
+        status.mode != NRA_MODE_LIVE_CASUAL || rc_client_get_spectator_mode_enabled(mock.context->client)) goto fail;
+    nra_unload_game(mock.context);
+    if (nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_OK ||
+        !nra_copy_status_snapshot(mock.context, &status) ||
+        status.game_loaded || status.mode != NRA_MODE_LIVE_CASUAL ||
+        !load(&mock, true) ||
+        rc_client_get_spectator_mode_enabled(mock.context->client) ||
+        !nra_copy_status_snapshot(mock.context, &status) ||
+        !status.game_loaded || status.mode != NRA_MODE_LIVE_CASUAL) goto fail;
+    nra_unload_game(mock.context);
+    nra_destroy(mock.context);
+    free(mock.rom);
+    return 1;
+fail:
+    if (mock.context != NULL) nra_destroy(mock.context);
+    free(mock.rom);
+    return 0;
+}
+
+static int durable_outbox_replay_scope(const NRA_CreateParams* params) {
+    Mock mock = {.processable = true, .validated = true, .accept_game = true};
+    NRA_PlatformVTable platform = *params->platform;
+    NRA_CreateParams local_params = *params;
+    NRA_OutboxJournalRecord record;
+    size_t record_count = 0;
+    size_t begins_before;
+
+    platform.secure_blob_get = secure_get;
+    platform.secure_blob_set = secure_set;
+    platform.secure_blob_delete = secure_delete;
+    mock.rom = generate_generic_file(FIXTURE_BYTES);
+    mock.rom_size = FIXTURE_BYTES;
+    local_params.platform = &platform;
+    local_params.platform_userdata = &mock;
+    local_params.game_userdata = &mock;
+    if (!seed_mixed_outbox(&mock) ||
+        nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_OK ||
+        nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
+        !route(&mock, "r=login2", login_ok)) goto fail;
+    drain(&mock);
+    begins_before = mock.begins;
+    if (!load(&mock, true) || mock.begins != begins_before + 3 ||
+        !strstr(mock.posts[mock.begins - 1], "u=user") ||
+        strstr(mock.posts[mock.begins - 1], "u=other") ||
+        !strstr(mock.posts[mock.begins - 1], "a=5501") ||
+        strstr(mock.posts[mock.begins - 1], "a=5502")) goto fail;
+    if (complete(&mock, mock.ids[mock.begins - 1], award_ok, 200, false) != NRA_OK) goto fail;
+    drain(&mock);
+    if (mock.begins != begins_before + 4 ||
+        !strstr(mock.posts[mock.begins - 1], "u=user") ||
+        !strstr(mock.posts[mock.begins - 1], "a=5502") ||
+        strstr(mock.posts[mock.begins - 1], "a=5501")) goto fail;
+    if (complete(&mock, mock.ids[mock.begins - 1], award_ok, 200, false) != NRA_OK) goto fail;
+    drain(&mock);
+    if (nra_outbox_journal_validate(mock.secure_blob, mock.secure_size, &record_count) !=
+            NRA_OUTBOX_JOURNAL_OK ||
+        record_count != 1 ||
+        nra_outbox_journal_decode(mock.secure_blob, mock.secure_size, &record, 1, &record_count) !=
+            NRA_OUTBOX_JOURNAL_OK ||
+        record_count != 1 || record.sequence != 1 || record.account_size != 5 ||
+        memcmp(record.account, "other", 5) != 0) goto fail;
+    nra_do_frame(mock.context);
+    nra_unload_game(mock.context);
+    nra_destroy(mock.context);
+    free(mock.rom);
+    return 1;
+fail:
+    if (mock.context != NULL) {
+        nra_unload_game(mock.context);
+        nra_destroy(mock.context);
+    }
+    if (mock.secure_blob != NULL) {
+        memset(mock.secure_blob, 0, mock.secure_size);
+        free(mock.secure_blob);
+    }
+    free(mock.rom);
+    return 0;
+}
+
 int main(void) {
     static const NRA_PlatformVTable platform = {.now_ms = now, .http_begin = begin, .http_cancel = cancel,
         .http_shutdown = shutdown_http, .secret_set = store, .secret_delete = erase};
@@ -596,6 +956,11 @@ int main(void) {
         if (!frame_drains_login_completion(&params)) { fprintf(stderr, "frame login failed\n"); return 1; }
         if (!credential_persistence_failure(&params)) { fprintf(stderr, "credential persistence failed\n"); return 1; }
         if (!rejected_stored_token_clears_credentials(&params)) { fprintf(stderr, "stored token clear failed\n"); return 1; }
+        if (!token_failure_unloads_game(&params)) { fprintf(stderr, "token failure unload failed\n"); return 1; }
+        if (!mode_admission_gate(&params)) { fprintf(stderr, "mode admission gate failed\n"); return 1; }
+        if (!locked_mode_transition(&params)) { fprintf(stderr, "locked mode transition failed\n"); return 1; }
+        if (!durable_outbox_flow(&params)) { fprintf(stderr, "durable outbox flow failed\n"); return 1; }
+        if (!durable_outbox_replay_scope(&params)) { fprintf(stderr, "durable outbox scope failed\n"); return 1; }
         if (!pthread_completion_stress(&params)) { fprintf(stderr, "pthread stress failed\n"); return 1; }
         if (nra_enqueue_http_completion(NULL, &invalid) != NRA_INVALID_ARGUMENT) return 1;
     }
@@ -604,7 +969,7 @@ int main(void) {
         nra_login_token(mock.context, "user", "token") != NRA_INVALID_STATE ||
         !route(&mock, "r=login2", login_ok) || !strstr(mock.posts[0], "p=password") ||
         strcmp(mock.user_agents[0], "native-ra-test/1")) {
-        fprintf(stderr, "login request failed post=%s ua=%s\n", mock.posts[0], mock.user_agents[0]);
+        fprintf(stderr, "login request failed begins=%d\n", mock.begins);
         goto fail;
     }
     {
@@ -656,7 +1021,7 @@ int main(void) {
         !route(&mock, "r=login2", login_ok)) goto fail;
     drain(&mock);
     if (mock.stores != 2) goto fail;
-    if (!load(&mock, false)) { fprintf(stderr, "load1 failed loads=%d begins=%d post=%s\n", mock.loads, mock.begins, mock.posts[mock.begins - 1]); goto fail; }
+    if (!load(&mock, false)) { fprintf(stderr, "load1 failed loads=%d begins=%d\n", mock.loads, mock.begins); goto fail; }
     if (mock.loads != 1) { fprintf(stderr, "load1 callback failed loads=%d\n", mock.loads); goto fail; }
     {
         NRA_UISnapshot ui;
@@ -681,7 +1046,7 @@ int main(void) {
             ui.progress_active || ui.toast_count) goto fail;
     }
 
-    if (nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_OK || !load(&mock, true) || mock.loads != 2) { fprintf(stderr, "load2 failed loads=%d begins=%d post=%s\n", mock.loads, mock.begins, mock.posts[mock.begins - 1]); goto fail; }
+    if (nra_request_mode(mock.context, NRA_MODE_LIVE_CASUAL) != NRA_OK || !load(&mock, true) || mock.loads != 2) { fprintf(stderr, "load2 failed loads=%d begins=%d\n", mock.loads, mock.begins); goto fail; }
     nra_do_frame(mock.context);
     if (mock.builds != 4 || mock.releases != 4) goto fail;
     mock.validated = false;
@@ -740,7 +1105,7 @@ fail:
         mock.context = NULL;
     }
     free(mock.rom);
-    fprintf(stderr, "native_ra P3 lifecycle test failed (begins=%d cancels=%d builds=%d releases=%d post0=%s post1=%s)\n",
-        mock.begins, mock.cancels, mock.builds, mock.releases, mock.posts[0], mock.posts[1]);
+    fprintf(stderr, "native_ra P3 lifecycle test failed (begins=%d cancels=%d builds=%d releases=%d)\n",
+        mock.begins, mock.cancels, mock.builds, mock.releases);
     return 1;
 }
