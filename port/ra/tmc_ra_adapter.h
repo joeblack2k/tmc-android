@@ -14,6 +14,7 @@ typedef struct TmcRaAdapter {
     uint32_t identified_game_id;
     bool reset_requested;
     bool strict_mode;
+    bool attestation_checked;
     bool memory_fully_validated;
 } TmcRaAdapter;
 

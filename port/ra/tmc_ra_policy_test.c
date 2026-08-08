@@ -10,7 +10,7 @@ static void AssertCapabilities(NRA_Mode mode, bool game_loaded, bool memory_full
 }
 
 static void AssertDenied(NRA_Mode mode, bool game_loaded, bool memory_fully_validated) {
-    assert(TmcRaPolicy_AdmitMode(mode, game_loaded, memory_fully_validated) == NRA_MODE_SPECTATOR);
+    assert(!TmcRaPolicy_CanAdmitMode(mode, game_loaded, memory_fully_validated));
     assert(!TmcRaPolicy_CanSubmit(mode, game_loaded, memory_fully_validated));
     AssertCapabilities(mode, game_loaded, memory_fully_validated, false);
 }
@@ -19,22 +19,19 @@ int main(void) {
     const NRA_Mode invalid_modes[] = {(NRA_Mode)-1, (NRA_Mode)4, (NRA_Mode)255};
     size_t i;
 
-    assert(TmcRaPolicy_DefaultMode() == NRA_MODE_SPECTATOR);
-
     for (i = 0; i < 4; ++i) {
         bool game_loaded = (i & 1u) != 0;
         bool memory_fully_validated = (i & 2u) != 0;
 
-        assert(TmcRaPolicy_AdmitMode(NRA_MODE_SPECTATOR, game_loaded, memory_fully_validated) ==
-               NRA_MODE_SPECTATOR);
+        assert(!TmcRaPolicy_CanAdmitMode(NRA_MODE_SPECTATOR, game_loaded, memory_fully_validated));
         assert(!TmcRaPolicy_CanSubmit(NRA_MODE_SPECTATOR, game_loaded, memory_fully_validated));
-        AssertCapabilities(NRA_MODE_SPECTATOR, game_loaded, memory_fully_validated, true);
+        AssertCapabilities(NRA_MODE_SPECTATOR, game_loaded, memory_fully_validated, false);
     }
 
     AssertDenied(NRA_MODE_LIVE_CASUAL, false, false);
     AssertDenied(NRA_MODE_LIVE_CASUAL, false, true);
     AssertDenied(NRA_MODE_LIVE_CASUAL, true, false);
-    assert(TmcRaPolicy_AdmitMode(NRA_MODE_LIVE_CASUAL, true, true) == NRA_MODE_LIVE_CASUAL);
+    assert(TmcRaPolicy_CanAdmitMode(NRA_MODE_LIVE_CASUAL, true, true));
     assert(TmcRaPolicy_CanSubmit(NRA_MODE_LIVE_CASUAL, true, true));
     AssertCapabilities(NRA_MODE_LIVE_CASUAL, true, true, true);
 

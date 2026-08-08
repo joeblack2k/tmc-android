@@ -9,8 +9,7 @@
 extern "C" {
 #endif
 
-NRA_Mode TmcRaPolicy_DefaultMode(void);
-NRA_Mode TmcRaPolicy_AdmitMode(NRA_Mode requested_mode, bool game_loaded, bool memory_fully_validated);
+bool TmcRaPolicy_CanAdmitMode(NRA_Mode requested_mode, bool game_loaded, bool memory_fully_validated);
 
 bool TmcRaPolicy_CanSubmit(NRA_Mode mode, bool game_loaded, bool memory_fully_validated);
 bool TmcRaPolicy_CanRestoreSaveState(NRA_Mode mode, bool game_loaded, bool memory_fully_validated);

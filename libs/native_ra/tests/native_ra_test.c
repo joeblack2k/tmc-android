@@ -399,6 +399,7 @@ static int token_failure_unloads_game(const NRA_CreateParams* params) {
     mock.rom_size = FIXTURE_BYTES;
     if (mock.rom == NULL ||
         nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_request_mode(mock.context, NRA_MODE_SPECTATOR) != NRA_OK ||
         nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
         !route(&mock, "r=login2", login_ok)) goto fail;
     drain(&mock);
@@ -798,6 +799,7 @@ static int locked_mode_transition(const NRA_CreateParams* params) {
     mock.rom_size = FIXTURE_BYTES;
     if (mock.rom == NULL ||
         nra_create(&local_params, &mock.context) != NRA_OK ||
+        nra_request_mode(mock.context, NRA_MODE_SPECTATOR) != NRA_OK ||
         nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
         !route(&mock, "r=login2", login_ok)) goto fail;
     drain(&mock);
@@ -965,6 +967,7 @@ int main(void) {
         if (nra_enqueue_http_completion(NULL, &invalid) != NRA_INVALID_ARGUMENT) return 1;
     }
     if (mock.rom == NULL || nra_create(&params, &mock.context) != NRA_OK ||
+        nra_request_mode(mock.context, NRA_MODE_SPECTATOR) != NRA_OK ||
         nra_login_password(mock.context, "user", "password") != NRA_PENDING ||
         nra_login_token(mock.context, "user", "token") != NRA_INVALID_STATE ||
         !route(&mock, "r=login2", login_ok) || !strstr(mock.posts[0], "p=password") ||
@@ -975,7 +978,12 @@ int main(void) {
     {
         NRA_GameAdapterVTable validating_game = game;
         NRA_CreateParams validating_params = params;
-        Mock validating = {.processable = true, .accept_game = true, .validation_reader = true};
+        Mock validating = {
+            .processable = true,
+            .validated = true,
+            .accept_game = true,
+            .validation_reader = true,
+        };
 
         validating.rom = mock.rom;
         validating.rom_size = mock.rom_size;
@@ -985,14 +993,25 @@ int main(void) {
         validating_params.game = &validating_game;
         validating_params.platform_userdata = &validating;
         validating_params.game_userdata = &validating;
-        if (nra_create(&validating_params, &validating.context) != NRA_OK ||
+        if (nra_create(&validating_params, &validating.context) != NRA_OK) {
+            fprintf(stderr, "validation reader create failed\n");
+            goto fail;
+        }
+        if (nra_request_mode(validating.context, NRA_MODE_SPECTATOR) != NRA_OK ||
             nra_login_password(validating.context, "user", "password") != NRA_PENDING ||
             !route(&validating, "r=login2", login_ok)) {
+            fprintf(stderr, "validation reader login failed begins=%d\n", validating.begins);
             if (validating.context) nra_destroy(validating.context);
             goto fail;
         }
         drain(&validating);
-        if (!load(&validating, false) || validating.snapshot_reads == 0) {
+        if (!load(&validating, false)) {
+            fprintf(stderr, "validation reader load failed begins=%d\n", validating.begins);
+            nra_destroy(validating.context);
+            goto fail;
+        }
+        if (validating.snapshot_reads == 0) {
+            fprintf(stderr, "validation reader had no reads builds=%d\n", validating.builds);
             nra_destroy(validating.context);
             goto fail;
         }

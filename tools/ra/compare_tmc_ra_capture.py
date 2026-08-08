@@ -41,8 +41,8 @@ STATE_NAMES = (
     "item pickup / progress flag change",
     "save and reload",
     "soft reset/relaunch",
-    "representative leaderboard condition",
-    "representative achievement trigger",
+    "authenticated achievement evaluation",
+    "normal achievement trigger",
 )
 INVARIANT_FIELDS = ("format", "manifest_sha256", "snapshot_bytes", "rom_md5")
 

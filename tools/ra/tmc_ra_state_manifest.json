@@ -81,13 +81,13 @@
     },
     {
       "id": "S13",
-      "name": "representative leaderboard condition",
+      "name": "authenticated achievement evaluation",
       "native": "S13/native",
       "reference": "S13/reference"
     },
     {
       "id": "S14",
-      "name": "representative achievement trigger",
+      "name": "normal achievement trigger",
       "native": "S14/native",
       "reference": "S14/reference"
     }

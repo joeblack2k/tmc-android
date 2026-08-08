@@ -70,10 +70,6 @@ void AgbMain(void) {
         }
         gPortSoftResetArmed = 1;
     }
-#ifdef TMC_ENABLE_RETROACHIEVEMENTS
-    if (!TmcRaRuntime_IsInitialized(&gTmcRaRuntime) && gRomData != NULL && gRomSize != 0)
-        (void)TmcRaRuntime_InitDefault(&gTmcRaRuntime);
-#endif
 #endif
     // Initialization
     N64_POST(10);
@@ -100,6 +96,12 @@ void AgbMain(void) {
     gRand = 0x1234567;
     MemClear(&gMain, sizeof(gMain));
     SetTask(TASK_TITLE);
+#ifdef TMC_ENABLE_RETROACHIEVEMENTS
+    if (!TmcRaRuntime_IsInitialized(&gTmcRaRuntime) && gRomData != NULL && gRomSize != 0) {
+        TmcRaMemory_Publish();
+        (void)TmcRaRuntime_InitDefault(&gTmcRaRuntime);
+    }
+#endif
     N64_POST(20);
 
     // Game Loop

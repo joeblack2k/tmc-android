@@ -1837,8 +1837,8 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     int32_t hms;
     int32_t sms;
     char account[24];
-    char game[28];
-    char presence[44];
+    char game[24];
+    char presence[26];
     char summary[64];
     char mode[16];
     char connection[16];

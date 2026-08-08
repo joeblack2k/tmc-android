@@ -1271,7 +1271,7 @@ NRA_Result nra_create(const NRA_CreateParams* params, NRA_Context** context) {
         free(result);
         return NRA_INTERNAL_ERROR;
     }
-    result->mode = NRA_MODE_SPECTATOR;
+    result->mode = NRA_MODE_LIVE_CASUAL;
     result->ui.available = true;
     result->ui.version = NRA_UI_SNAPSHOT_VERSION;
     result->ui.generation = 1;
@@ -1303,7 +1303,7 @@ NRA_Result nra_create(const NRA_CreateParams* params, NRA_Context** context) {
     rc_client_set_get_time_millisecs_function(result->client, nra_now_ms);
     rc_client_set_allow_background_memory_reads(result->client, 0);
     rc_client_set_hardcore_enabled(result->client, 0);
-    rc_client_set_spectator_mode_enabled(result->client, 1);
+    rc_client_set_spectator_mode_enabled(result->client, 0);
     *context = result;
     return NRA_OK;
 }

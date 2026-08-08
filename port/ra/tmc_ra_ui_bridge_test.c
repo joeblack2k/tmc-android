@@ -24,7 +24,7 @@ int main(void) {
     source.available = true;
     source.version = NRA_UI_SNAPSHOT_VERSION;
     source.generation = 42;
-    source.mode = NRA_MODE_SPECTATOR;
+    source.mode = NRA_MODE_LIVE_CASUAL;
     source.logged_in = true;
     source.game_loaded = true;
     source.game_id = 1234;
@@ -59,7 +59,7 @@ int main(void) {
     command.kind = TMC_RA_UI_COMMAND_LOGOUT;
     failures += expect(TmcRaUiBridge_EnqueueCommand(&command), "logout command is accepted");
     command.kind = TMC_RA_UI_COMMAND_REQUEST_MODE;
-    command.mode = NRA_MODE_SPECTATOR;
+    command.mode = NRA_MODE_LIVE_CASUAL;
     failures += expect(TmcRaUiBridge_EnqueueCommand(&command), "mode command is accepted");
     failures += expect(TmcRaUiBridge_TakeCommand(&taken) &&
                            taken.kind == TMC_RA_UI_COMMAND_REQUEST_PASSWORD_LOGIN,
@@ -70,7 +70,7 @@ int main(void) {
                        "logout follows login");
     failures += expect(TmcRaUiBridge_TakeCommand(&taken) &&
                            taken.kind == TMC_RA_UI_COMMAND_REQUEST_MODE &&
-                           taken.mode == NRA_MODE_SPECTATOR,
+                           taken.mode == NRA_MODE_LIVE_CASUAL,
                        "mode command follows logout");
     failures += expect(TmcRaUiBridge_TakeCommand(&taken) &&
                            taken.kind == TMC_RA_UI_COMMAND_REQUEST_PASSWORD_LOGIN,

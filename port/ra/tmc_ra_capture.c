@@ -62,8 +62,8 @@ static const char* const kCheckpointNames[] = {
     "item pickup / progress flag change",
     "save and reload",
     "soft reset/relaunch",
-    "representative leaderboard condition",
-    "representative achievement trigger",
+    "authenticated achievement evaluation",
+    "normal achievement trigger",
 };
 
 static int CheckpointIndex(const char* checkpoint) {

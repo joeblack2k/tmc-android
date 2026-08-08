@@ -69,7 +69,7 @@ static bool StartIdentify(TmcRaRuntime* runtime) {
 typedef bool (*TmcRaPolicyPredicate)(NRA_Mode mode, bool game_loaded, bool memory_fully_validated);
 
 static bool CanUsePolicy(const TmcRaRuntime* runtime, TmcRaPolicyPredicate predicate) {
-    NRA_Mode mode = TmcRaPolicy_DefaultMode();
+    NRA_Mode mode = NRA_MODE_LIVE_CASUAL;
     bool game_loaded = false;
     bool memory_fully_validated = false;
     NRA_StatusSnapshot status;
@@ -110,7 +110,7 @@ static void DrainUiCommands(TmcRaRuntime* runtime) {
 
                     if (nra_copy_status_snapshot(runtime->context, &status))
                         game_loaded = status.game_loaded;
-                    if (TmcRaPolicy_AdmitMode(command.mode, game_loaded, memory_fully_validated) == command.mode)
+                    if (TmcRaPolicy_CanAdmitMode(command.mode, game_loaded, memory_fully_validated))
                         (void)nra_request_mode(runtime->context, command.mode);
                 }
                 break;

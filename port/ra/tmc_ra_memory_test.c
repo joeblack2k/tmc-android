@@ -122,6 +122,8 @@ int main(void) {
     gSave.areaVisitFlags[7] = 0x1f202122;
     gSave.name[0] = 0x23;
     gSave.name[5] = 0x24;
+    gSave.figurines[0] = 0x2e;
+    gSave.figurines[35] = 0x2f;
     gSave.inventory[0] = 0x25;
     gSave.inventory[33] = 0x26;
     gSave.flags[0] = 0x27;
@@ -470,7 +472,9 @@ int main(void) {
     CHECK(!TmcRaMemory_Current().validated[0x0aad1]);
     CHECK(!TmcRaMemory_Current().validated[0x0aafc]);
     CHECK(!TmcRaMemory_Current().validated[0x0ab0c] && !TmcRaMemory_Current().validated[0x0ab0d]);
-    CHECK(!TmcRaMemory_Current().validated[0x0ab0e] && !TmcRaMemory_Current().validated[0x0ab31]);
+    CHECK(TmcRaMemory_Current().bytes[0x0ab0e] == 0x2e &&
+          TmcRaMemory_Current().bytes[0x0ab31] == 0x2f);
+    CHECK(TmcRaMemory_Current().validated[0x0ab0e] && TmcRaMemory_Current().validated[0x0ab31]);
     CHECK(TmcRaMemory_Current().bytes[0x0ab32] == 0x25 && TmcRaMemory_Current().bytes[0x0ab53] == 0x26);
     CHECK(TmcRaMemory_Current().bytes[0x0ab56] == 1 && TmcRaMemory_Current().bytes[0x0ab58] == 0x10);
     CHECK(TmcRaMemory_Current().bytes[0x0ab6a] == 0x11 && TmcRaMemory_Current().bytes[0x0ab6b] == 0x12);

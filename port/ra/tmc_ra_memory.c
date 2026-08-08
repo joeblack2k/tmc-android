@@ -381,6 +381,7 @@ static void PackSave(TmcRaSnapshot* snapshot) {
     PackBytes(snapshot, offset + 0x080, gSave.name, sizeof(gSave.name));
     PackPlayerRoomStatus(snapshot, offset + 0x088, &gSave.saved_status);
     PackStats(snapshot, offset + 0x0a8, &gSave.stats);
+    PackBytes(snapshot, offset + 0x0ce, gSave.figurines, sizeof(gSave.figurines));
     PackBytes(snapshot, offset + 0x0f2, gSave.inventory, sizeof(gSave.inventory));
     PackKinstones(snapshot, offset + 0x114, &gSave.kinstones);
     /* The host tail is shifted by one byte; preserve the documented GBA offsets. */
