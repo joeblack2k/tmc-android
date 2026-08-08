@@ -12,7 +12,7 @@
 #include <string.h>
 #include <time.h>
 
-#define TMC_RA_USER_AGENT "tmc/" TMC_PC_VERSION " native-ra/1 rcheevos/12.3.0"
+#define TMC_RA_USER_AGENT "SkyEmu/4.0"
 #define TMC_RA_IDENTIFY_MAX_ATTEMPTS 2u
 
 TmcRaRuntime gTmcRaRuntime;

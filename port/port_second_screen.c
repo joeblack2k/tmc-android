@@ -1880,7 +1880,7 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     infoY = iy0 + MENU_TEXT_BOX * hms + 30 * u;
 
     Port_SecondScreenTheme_DrawWell(s->px, s->w, s->h, s->stride, (int32_t)ix0, (int32_t)infoY,
-                                    (int32_t)(ix1 - ix0), (int32_t)(84 * u), ts > 2 ? 2 : ts);
+                                    (int32_t)(ix1 - ix0), (int32_t)(126 * u), ts > 2 ? 2 : ts);
     RaCopyText(account, sizeof(account), ui->logged_in ? ui->account_name : NULL, "NOT LOGGED IN");
     RaCopyText(game, sizeof(game), ui->game_loaded ? ui->game_title : NULL,
                ui->logged_in ? "WAITING FOR GAME" : "LOGIN REQUIRED");
@@ -1899,10 +1899,10 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
     MenuTextDraw(s, connection, (int32_t)(ix1 - 118 * u), (int32_t)(infoY + 10 * u), sms,
                  ui->connection == NRA_UI_CONNECTION_ONLINE ? SS_TEXT_GREEN : SS_TEXT_RED);
     MenuTextDraw(s, game, (int32_t)(ix0 + 18 * u), (int32_t)(infoY + 54 * u), sms, SS_TEXT_INK);
-    MenuTextDraw(s, presence, (int32_t)(ix0 + (ix1 - ix0) * 0.52f), (int32_t)(infoY + 54 * u), sms,
-                 SS_TEXT_NAVY);
+    MenuTextDraw(s, presence, (int32_t)(ix0 + 18 * u), (int32_t)(infoY + 78 * u), sms, SS_TEXT_NAVY);
+    MenuTextDraw(s, summary, (int32_t)(ix0 + 18 * u), (int32_t)(infoY + 102 * u), sms, SS_TEXT_INK);
 
-    listY = infoY + 96 * u;
+    listY = infoY + 138 * u;
     listBottom = iy1 - actionChipHeight - 12 * u;
     if (stackActions)
         listBottom -= actionChipHeight + actionGap;
@@ -1911,8 +1911,6 @@ static void PaintRaPanel(const SSurf* s, const NRA_UISnapshot* ui, TargetList* t
         rowH = 94 * u;
     if (rowH < 34 * u)
         rowH = 34 * u;
-    MenuTextDraw(s, summary, (int32_t)ix0, (int32_t)(listY - 26 * u), sms, SS_TEXT_INK);
-
     count = (int)ui->achievement_count;
     if (count > 4)
         count = 4;

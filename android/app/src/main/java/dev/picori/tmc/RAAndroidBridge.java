@@ -385,7 +385,7 @@ public final class RAAndroidBridge {
             connection.setConnectTimeout(10_000);
             connection.setReadTimeout(30_000);
             connection.setRequestMethod("GET");
-            connection.setRequestProperty("User-Agent", "tmc-ra-badge");
+            connection.setRequestProperty("User-Agent", "SkyEmu/4.0");
             int status = connection.getResponseCode();
             if (status != 200) {
                 return;

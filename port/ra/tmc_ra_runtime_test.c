@@ -15,6 +15,7 @@ typedef struct {
     unsigned failed_game_loads;
     unsigned shutdowns;
     uint32_t generation_on_game_request;
+    char user_agent[32];
 } RuntimeFixture;
 
 static const char kLoginResponse[] = "{\"Success\":true,\"User\":\"user\",\"Token\":\"token\"}";
@@ -35,7 +36,8 @@ static void Begin(void* userdata, NRA_RequestId id, const NRA_HttpRequest* reque
         .body = (const uint8_t*)kLoginResponse,
         .body_size = sizeof(kLoginResponse) - 1,
     };
-    (void)request;
+    snprintf(fixture->user_agent, sizeof(fixture->user_agent), "%s",
+             request != NULL && request->user_agent != NULL ? request->user_agent : "");
     ++fixture->requests;
     if (fixture->requests == 1)
         (void)nra_enqueue_http_completion(fixture->runtime->context, &completion);
@@ -109,7 +111,8 @@ int main(void) {
     if (pthread_create(&thread, NULL, ForeignLifecycle, &runtime) != 0)
         return 1;
     pthread_join(thread, &result);
-    if (result != NULL || !TmcRaRuntime_IsInitialized(&runtime) || fixture.requests != 1)
+    if (result != NULL || !TmcRaRuntime_IsInitialized(&runtime) || fixture.requests != 1 ||
+        strcmp(fixture.user_agent, "SkyEmu/4.0") != 0)
         return 1;
     TmcRaMemory_ResetRequestedCoverage();
     (void)TmcRaMemory_Read(0x0010, NULL);
